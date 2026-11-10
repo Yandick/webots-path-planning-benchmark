@@ -1,0 +1,14 @@
+{
+  "algorithm": "informed_rrt_star_dwa",
+  "description": "Selected default planner for Webots robot navigation.",
+  "available_algorithms": [
+    "informed_rrt_star_dwa",
+    "mpc",
+    "a_star_dwa",
+    "voronoi_dwa",
+    "pso_dwa",
+    "rrt_star_dwa",
+    "apf",
+    "improved_apf"
+  ]
+}

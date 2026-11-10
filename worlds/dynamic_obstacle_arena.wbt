@@ -1,0 +1,552 @@
+#VRML_SIM R2025a utf8
+
+WorldInfo {
+  basicTimeStep 32
+  coordinateSystem "ENU"
+  lineScale 0.1
+}
+
+Viewpoint {
+  orientation 0.25 0.22 0.94 1.85
+  position -8.5 -8.5 11.0
+  fieldOfView 0.8
+}
+
+DirectionalLight {
+  direction 0.4 0.4 -1
+  intensity 1.2
+  castShadows TRUE
+}
+
+DirectionalLight {
+  direction -0.4 -0.4 -1
+  intensity 0.5
+}
+
+# Ground Floor
+Solid {
+  translation 0 0 -0.05
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.88 0.88 0.88
+        roughness 0.6
+        metalness 0.1
+      }
+      geometry Box {
+        size 10.2 10.2 0.1
+      }
+    }
+  ]
+  name "floor"
+  boundingObject Box {
+    size 10.2 10.2 0.1
+  }
+}
+
+# Boundary Walls
+DEF WALL_NORTH Solid {
+  translation 0 5.0 0.3
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.3 0.35 0.4
+        roughness 0.5
+      }
+      geometry Box {
+        size 10.2 0.2 0.6
+      }
+    }
+  ]
+  name "wall_north"
+  boundingObject Box {
+    size 10.2 0.2 0.6
+  }
+}
+
+DEF WALL_SOUTH Solid {
+  translation 0 -5.0 0.3
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.3 0.35 0.4
+        roughness 0.5
+      }
+      geometry Box {
+        size 10.2 0.2 0.6
+      }
+    }
+  ]
+  name "wall_south"
+  boundingObject Box {
+    size 10.2 0.2 0.6
+  }
+}
+
+DEF WALL_EAST Solid {
+  translation 5.0 0 0.3
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.3 0.35 0.4
+        roughness 0.5
+      }
+      geometry Box {
+        size 0.2 10.2 0.6
+      }
+    }
+  ]
+  name "wall_east"
+  boundingObject Box {
+    size 0.2 10.2 0.6
+  }
+}
+
+DEF WALL_WEST Solid {
+  translation -5.0 0 0.3
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.3 0.35 0.4
+        roughness 0.5
+      }
+      geometry Box {
+        size 0.2 10.2 0.6
+      }
+    }
+  ]
+  name "wall_west"
+  boundingObject Box {
+    size 0.2 10.2 0.6
+  }
+}
+
+# Start Indicator (Green disc)
+Solid {
+  translation -4.0 -4.0 0.005
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.1 0.85 0.2
+        emissiveColor 0.1 0.6 0.15
+        roughness 0.3
+      }
+      geometry Cylinder {
+        height 0.01
+        radius 0.35
+      }
+    }
+  ]
+  name "start_marker"
+}
+
+# Goal Indicator (Red disc)
+Solid {
+  translation 4.0 4.0 0.005
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.9 0.15 0.15
+        emissiveColor 0.7 0.1 0.1
+        roughness 0.3
+      }
+      geometry Cylinder {
+        height 0.01
+        radius 0.35
+      }
+    }
+  ]
+  name "goal_marker"
+}
+
+# Static Obstacles
+DEF OBS_STATIC_1 Solid {
+  translation 0 0 0.4
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.2 0.4 0.7
+        roughness 0.4
+      }
+      geometry Box {
+        size 1.4 1.4 0.8
+      }
+    }
+  ]
+  name "obs_static_1"
+  boundingObject Box {
+    size 1.4 1.4 0.8
+  }
+}
+
+DEF OBS_STATIC_2 Solid {
+  translation -2.2 1.5 0.4
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.2 0.4 0.7
+        roughness 0.4
+      }
+      geometry Box {
+        size 1.0 2.4 0.8
+      }
+    }
+  ]
+  name "obs_static_2"
+  boundingObject Box {
+    size 1.0 2.4 0.8
+  }
+}
+
+DEF OBS_STATIC_3 Solid {
+  translation 2.2 -1.5 0.4
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.2 0.4 0.7
+        roughness 0.4
+      }
+      geometry Box {
+        size 2.4 1.0 0.8
+      }
+    }
+  ]
+  name "obs_static_3"
+  boundingObject Box {
+    size 2.4 1.0 0.8
+  }
+}
+
+DEF OBS_STATIC_4 Solid {
+  translation -1.8 -1.8 0.4
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.2 0.5 0.8
+        roughness 0.4
+      }
+      geometry Cylinder {
+        height 0.8
+        radius 0.5
+      }
+    }
+  ]
+  name "obs_static_4"
+  boundingObject Cylinder {
+    height 0.8
+    radius 0.5
+  }
+}
+
+DEF OBS_STATIC_5 Solid {
+  translation 1.8 1.8 0.4
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.2 0.5 0.8
+        roughness 0.4
+      }
+      geometry Cylinder {
+        height 0.8
+        radius 0.5
+      }
+    }
+  ]
+  name "obs_static_5"
+  boundingObject Cylinder {
+    height 0.8
+    radius 0.5
+  }
+}
+
+DEF OBS_STATIC_6 Solid {
+  translation -0.2 3.2 0.4
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.2 0.4 0.7
+        roughness 0.4
+      }
+      geometry Box {
+        size 2.2 0.7 0.8
+      }
+    }
+  ]
+  name "obs_static_6"
+  boundingObject Box {
+    size 2.2 0.7 0.8
+  }
+}
+
+DEF OBS_STATIC_7 Solid {
+  translation 0.2 -3.2 0.4
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.2 0.5 0.8
+        roughness 0.4
+      }
+      geometry Cylinder {
+        height 0.8
+        radius 0.5
+      }
+    }
+  ]
+  name "obs_static_7"
+  boundingObject Cylinder {
+    height 0.8
+    radius 0.5
+  }
+}
+
+# Dynamic Obstacles (controlled by supervisor)
+DEF OBS_DYNAMIC_1 Solid {
+  translation -1.2 -0.6 0.3
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.95 0.2 0.1
+        emissiveColor 0.3 0.05 0.02
+        roughness 0.3
+      }
+      geometry Cylinder {
+        height 0.6
+        radius 0.35
+      }
+    }
+  ]
+  name "obs_dyn_1"
+  boundingObject Cylinder {
+    height 0.6
+    radius 0.35
+  }
+  physics Physics {
+    density 1000
+  }
+}
+
+DEF OBS_DYNAMIC_2 Solid {
+  translation 0.6 0.8 0.3
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.95 0.75 0.1
+        emissiveColor 0.25 0.2 0.02
+        roughness 0.3
+      }
+      geometry Cylinder {
+        height 0.6
+        radius 0.35
+      }
+    }
+  ]
+  name "obs_dyn_2"
+  boundingObject Cylinder {
+    height 0.6
+    radius 0.35
+  }
+  physics Physics {
+    density 1000
+  }
+}
+
+DEF OBS_DYNAMIC_3 Solid {
+  translation -0.5 1.8 0.3
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.85 0.15 0.85
+        emissiveColor 0.2 0.03 0.2
+        roughness 0.3
+      }
+      geometry Cylinder {
+        height 0.6
+        radius 0.3
+      }
+    }
+  ]
+  name "obs_dyn_3"
+  boundingObject Cylinder {
+    height 0.6
+    radius 0.3
+  }
+  physics Physics {
+    density 1000
+  }
+}
+
+# Autonomous Mobile Robot
+DEF ROBOT Robot {
+  translation -4.0 -4.0 0.05
+  rotation 0 0 1 0.785398
+  children [
+    # Chassis
+    Transform {
+      translation 0 0 0.02
+      children [
+        DEF CHASSIS_SHAPE Shape {
+          appearance PBRAppearance {
+            baseColor 0.15 0.7 0.95
+            roughness 0.3
+            metalness 0.2
+          }
+          geometry Cylinder {
+            height 0.06
+            radius 0.18
+          }
+        }
+      ]
+    }
+    # Heading Indicator Arrow / Top cap
+    Transform {
+      translation 0.08 0 0.055
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.1 0.2 0.3
+            roughness 0.3
+          }
+          geometry Box {
+            size 0.08 0.04 0.01
+          }
+        }
+      ]
+    }
+    # Sensors
+    GPS {
+      name "gps"
+    }
+    Compass {
+      name "compass"
+    }
+    InertialUnit {
+      name "inertial_unit"
+    }
+    Transform {
+      translation 0 0 0.08
+      children [
+        Lidar {
+          name "lidar"
+          horizontalResolution 360
+          numberOfLayers 1
+          minRange 0.22
+          maxRange 6.0
+          fieldOfView 6.2831853
+          defaultFrequency 20
+        }
+      ]
+    }
+    # Left Wheel Motor & Sensor
+    HingeJoint {
+      jointParameters HingeJointParameters {
+        axis 0 1 0
+        anchor 0 0.15 0
+      }
+      device [
+        RotationalMotor {
+          name "left wheel motor"
+          maxVelocity 10.0
+        }
+        PositionSensor {
+          name "left wheel sensor"
+        }
+      ]
+      endPoint Solid {
+        translation 0 0.15 0
+        rotation 1 0 0 1.5708
+        children [
+          DEF WHEEL_SHAPE Shape {
+            appearance PBRAppearance {
+              baseColor 0.1 0.1 0.1
+              roughness 0.8
+            }
+            geometry Cylinder {
+              height 0.025
+              radius 0.05
+            }
+          }
+        ]
+        name "wheel_left"
+        boundingObject Cylinder {
+          height 0.025
+          radius 0.05
+        }
+        physics Physics {
+          density 1000
+        }
+      }
+    }
+    # Right Wheel Motor & Sensor
+    HingeJoint {
+      jointParameters HingeJointParameters {
+        axis 0 1 0
+        anchor 0 -0.15 0
+      }
+      device [
+        RotationalMotor {
+          name "right wheel motor"
+          maxVelocity 10.0
+        }
+        PositionSensor {
+          name "right wheel sensor"
+        }
+      ]
+      endPoint Solid {
+        translation 0 -0.15 0
+        rotation 1 0 0 1.5708
+        children [
+          USE WHEEL_SHAPE
+        ]
+        name "wheel_right"
+        boundingObject Cylinder {
+          height 0.025
+          radius 0.05
+        }
+        physics Physics {
+          density 1000
+        }
+      }
+    }
+  ]
+  boundingObject Group {
+    children [
+      Transform {
+        translation 0 0 0.02
+        children [
+          Cylinder {
+            height 0.06
+            radius 0.18
+          }
+        ]
+      }
+      Transform {
+        translation 0.13 0 -0.03
+        children [
+          Sphere {
+            radius 0.02
+          }
+        ]
+      }
+      Transform {
+        translation -0.13 0 -0.03
+        children [
+          Sphere {
+            radius 0.02
+          }
+        ]
+      }
+    ]
+  }
+  physics Physics {
+    mass 3.0
+  }
+  name "robot"
+  controller "robot_navigator"
+}
+
+# Supervisor Controller (Manages dynamic obstacles & benchmark statistics)
+DEF SUPERVISOR Robot {
+  name "supervisor"
+  controller "robot_supervisor"
+  supervisor TRUE
+}
