@@ -9,7 +9,7 @@ import numpy as np
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from navigation.core import Navigator, astar
-from navigation.scenarios import SCENES, Scene, MovingDisc, make_scene, clearance, validate_scene
+from navigation.scenarios import SCENES, Scene, MovingDisc, make_scene, clearance, validate_scene, GridMap, StaticObstacle
 from navigation.simulation import scan, run
 from scripts.generate_worlds import world_text
 
@@ -55,6 +55,17 @@ class NavigationTests(unittest.TestCase):
         self.assertEqual(result["status"], "success")
         self.assertGreater(result["replans"], 0)
         self.assertTrue(any(max(p[1] for p in h["path"]) > 2.2 for h in result["path_history"]))
+
+    def test_safe_start_can_exit_new_obstacle_inflation(self):
+        grid = GridMap(robot_radius=.18, safety_margin=.22,
+                       obstacles=[StaticObstacle("cylinder", {"center": (0.,0.), "radius": .48})])
+        start = (-.8, 0.)
+        self.assertTrue(grid.is_occupied(*grid.world_to_grid(*start)))
+        path = astar(grid, start, (4., 0.))
+        self.assertIsNotNone(path)
+        self.assertTrue(all(grid.is_line_collision_free(a, b, step=.01, margin=.19)
+                            for a, b in zip(path[:-1], path[1:])))
+        self.assertIsNone(astar(grid, (-.5,0.), (4.,0.)))
 
 
 if __name__ == "__main__":

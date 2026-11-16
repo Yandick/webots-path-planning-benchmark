@@ -20,7 +20,36 @@ def angle(a):
 
 def astar(grid, start, goal):
     source, target = grid.world_to_grid(*start), grid.world_to_grid(*goal)
-    if grid.is_occupied(*source) or grid.is_occupied(*target):
+    if grid.is_occupied(*target):
+        return None
+    if grid.is_occupied(*source):
+        # A safe stopped robot may already be inside a newly inflated obstacle band.
+        # Find a short, geometrically checked exit; never erase occupied cells.
+        escape_margin = grid.robot_radius+.01
+        if not grid.is_collision_free_point(*start, margin=escape_margin):
+            return None
+        queue, parents = deque([source]), {source: None}
+        while queue:
+            node = queue.popleft()
+            position = start if node==source else grid.grid_to_world(*node)
+            if not grid.is_occupied(*node):
+                tail = astar(grid, position, goal)
+                if tail is not None:
+                    prefix, cur = [], node
+                    while cur is not None:
+                        prefix.append(tuple(start) if cur==source else grid.grid_to_world(*cur))
+                        cur = parents[cur]
+                    prefix.reverse()
+                    return np.vstack((np.asarray(prefix[:-1]), tail)) if len(prefix)>1 else tail
+            for dx, dy in ((1,0),(-1,0),(0,1),(0,-1),(1,1),(1,-1),(-1,1),(-1,-1)):
+                nxt = node[0]+dx, node[1]+dy
+                if nxt in parents or not grid.is_in_bounds(*nxt):
+                    continue
+                dest = grid.grid_to_world(*nxt)
+                if np.linalg.norm(np.asarray(dest)-start)>.8:
+                    continue
+                if grid.is_line_collision_free(position, dest, step=.02, margin=escape_margin):
+                    parents[nxt] = node; queue.append(nxt)
         return None
     queue = [(0., source)]
     cost, parent, closed = {source: 0.}, {}, set()
