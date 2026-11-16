@@ -109,9 +109,42 @@ seed 0 额外运行一次“保留原始安全参考、关闭 QP 与样条”，
 
 保留中间路线主要恢复安全间距；QP 与样条进一步把折角变为连续转弯，使运动中的角加速度下降，实际行程也从 13.501 m 降至 13.171 m。
 
+关闭平滑的配置可用以下 Python 代码复现：
+
+```python
+from unittest.mock import patch
+from navigation.classical import voronoi_route
+from navigation.scenarios import make_scene
+from navigation.simulation import run
+
+with patch("navigation.core.voronoi_qp_path", voronoi_route):
+    result = run(make_scene(seed=0), "voronoi_qp")
+print({k: result[k] for k in ("finish_time", "min_surface_clearance",
+                             "planned_peak_curvature", "moving_angular_accel_rms")})
+```
+
 ## 8. Webots 与复现
 
 原生仿真采用相同地图、控制代码与 seed 0。四个 90° 雷达扇区、每扇区 90 条射线构成 360° 扫描；导航周期 96 ms，Supervisor 每 32 ms 检查几何净空。每次核对方法、地图摘要和两个控制器的新日志。
+
+[本次 GitHub Actions](https://github.com/Yandick/webots-path-planning-benchmark/actions/runs/43815885972)已通过全部六方法原生检查。
+
+| 方法（seed 0） | 状态 | 到达/终止时间 | 实际行程 | 最低实际净空 |
+| --- | --- | --- | --- | --- |
+| A* | success | 74.784 s | 11.586 m | 0.11344 m |
+| RRT* | success | 74.528 s | 11.572 m | 0.11108 m |
+| Voronoi | success | 29.280 s | 12.370 m | 0.13130 m |
+| APF | timeout | 100.000 s | 4.967 m | 0.34415 m |
+| DWA | timeout | 100.000 s | 1.512 m | 0.11126 m |
+| 安全 QP | success | 31.168 s | 13.176 m | 0.20967 m |
+
+安全 QP 的最低实际净空增加 59.68%，运动中指令角加速度 RMS 从 0.63725 降至 0.54613 rad/s²，降低 14.30%；到达时间增加 1.888 s。规划峰值曲率为 10.57364 与 1.35288 m⁻¹。
+
+本次原生运行的初次规划开销为 Voronoi 29.0 ms、安全 QP 944.6 ms，该步骤在启动时执行一次。原生雷达最近点的最大几何误差为 0.01159 m。
+
+[原生汇总及来源](../results/webots_validation.json)记录源代码提交、CI、artifact 摘要、传感器配置和截图来源；[完整原生日志](../results/webots_raw_runs.json.gz)保存六种方法的控制轨迹、监督器轨迹和初始路线。
+
+![Webots 原生截图，t=28s](../results/webots_scene.png)
 
 ```bash
 python -m pip install -r requirements.txt

@@ -71,5 +71,6 @@
       "adaptation": "geometric Voronoi reference; smoothness/reference weights 1000/1; shared inflated grid and follower",
       "implementation": "navigation/smoothing.py:voronoi_qp_path"
     }
-  }
+  },
+  "source_commit": "333afbdf923c2fa8141a3a1f8d2588579ce053da"
 }

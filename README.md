@@ -69,6 +69,15 @@ python evaluation/check_webots_smoke.py
 
 可用 `WEBOTS_BINARY` 指定原生可执行文件。无显示 Linux 使用 xvfb-run 保留原生雷达渲染。四个 90° 雷达扇区构成 360° 扫描，导航周期 96 ms，Supervisor 每 32 ms 检查实际几何净空。`RECORD_VIDEO=1` 可录制原生视频，运行过程也会导出截图。
 
+## Webots 原生实测
+
+六种方法各运行 seed 0，[完整 CI 与检查记录](https://github.com/Yandick/webots-path-planning-benchmark/actions/runs/43815885972)。
+Voronoi 与安全 QP 均无碰撞到达，最低实际净空为 0.13130 m 和 0.20967 m（增加 59.7%），运动中指令角加速度 RMS 为 0.63725 和 0.54613 rad/s²（降低 14.3%）。到达时间为 29.280 s 和 31.168 s。
+
+[原生汇总与溯源](results/webots_validation.json) · [六方法完整原生日志](results/webots_raw_runs.json.gz)
+
+![Webots 原生截图，t=28s](results/webots_scene.png)
+
 ## 内容与依赖
 
 - `navigation/scenarios.py`：唯一地图、小车时序及独立几何净空计算。
