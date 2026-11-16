@@ -1,102 +1,80 @@
-# 机器人避障课设：阻塞触发的 A* 重规划 + DWA
+# 机器人避障课设：仓库地图与事件触发重规划
 
-本项目研究一个直观问题：静态地图给出的短路被移动小车长时间堵住时，局部避障为什么一直等待，怎样发现另一条路？
+一张 10 m × 10 m 的仓库地图：七组货架、连续转弯、中央短通道、上方绕行通道，以及两辆按固定时序运动的小车。研究的问题是：原路线被占用时，机器人能否及时换路，减少停等？
 
-主方法为 **阻塞触发重规划（replan_dwa）**。与固定 A* + DWA 相比，只增加激光观测记忆和停滞触发器，继续使用同一个 A* 和局部 DWA。保留了定时重规划作为比较。旧 Informed Bi-RRT* 代码、原始日志和原世界文件保留用于历史核对；原先的 SOTA、严格曲率约束和零碰撞结论已撤回。
+物理世界只有静态障碍和动态障碍。机器人使用已知静态栅格地图和激光雷达观测；“激光点”是雷达测到的障碍物表面位置。静态地图、传感器障碍更新、安全膨胀这一结构可参照 [Nav2 官方配置](https://github.com/ros-navigation/navigation2/blob/main/nav2_bringup/params/nav2_params.yaml)。本项目在 Webots 中独立实现了简化版本，未集成 ROS/Nav2；仓库布局是课设自建场景。
 
-## 目前完成的验证
+![唯一仓库地图](results/map.png)
 
-- 已运行 **二维差速运动学仿真**：5 个场景 × 5 个配对时间偏移 × 3 种方法，共 75 次。
-- 持续堵路场景：固定路径平均 **52.04 s**，阻塞触发 **37.90 s**，减少 **27.17%**；两者均 5/5 到达且无几何碰撞。
-- 定时重规划在该场景平均 **33.28 s**，共重规划 40 次；阻塞触发共 12 次。事件触发减少计算次数，但并非最快。
-- 短暂横穿和快速横穿仍有碰撞，完整保留。方法解决的是持久阻塞后的路线切换，不具备运动预测能力。
-- **Webots 原生物理验证已通过**：seed 0 持续堵路场景为 **51.712 s → 33.824 s**，减少 **34.59%**，两者均无几何碰撞。无动态障碍对照均为 19.392 s。原生共 4 次验证，不作为多次平均提升。
-- 原生最近激光点的几何误差验收已通过，四次运行最大误差为 0.0169 m；7 项回归检查和原生行为检查均通过。[CI 日志](https://github.com/Yandick/webots-path-planning-benchmark/actions/runs/43795919275) · [原生汇总](results/revised/webots_validation.json) · [原生原始轨迹](results/revised/webots_raw_runs.json.gz)
+三种方法共享 A*、DWA、速度限制、激光观测和短时速度估计，仅改变全局重规划策略：
 
-![paired results](results/revised/benchmark.png)
-![blocked passage](results/revised/blocked_passage.png)
+| 方法 | 全局路径何时更新 |
+| --- | --- |
+| fixed_dwa | 只在启动时规划一次 |
+| periodic_dwa | 有动态障碍观测时，每隔至少 4 s 重规划 |
+| replan_dwa | 前方路线被持续占用 0.8 s，或停滞约 2.5 s 时，触发重规划 |
 
-![Webots 原生场景渲染快照](results/revised/webots_blocked_t28.png)
+改进的直观动机、方法细节、实验边界和答辩说明见 [课设报告](docs/coursework_path_planning_report.md)。不使用“SOTA”或全场景最优等称谓。
 
-[同步障碍物运动的二维演示视频](results/revised/blocked_passage.mp4) · [完整实验说明和答辩要点](docs/coursework_path_planning_report.md)
+## 运行与可视化
 
-## 运行二维实验，不需要 GUI 或 Webots
+无 GUI、无 Webots 也能跑明确标注的二维运动学实验，并导出 PNG 和 MP4：
 
 ```bash
 python -m pip install -r requirements.txt
+python scripts/generate_worlds.py
 python -m unittest discover -s tests -v
 python evaluation/benchmark.py --seeds 0 1 2 3 4
-python evaluation/plot_revised.py --video
+python evaluation/plot_results.py --video
 ```
 
-`--video` 需要 PATH 中有 ffmpeg；不导出视频时去掉该参数即可。
+`--video` 需要 PATH 中存在 ffmpeg；只导出图片时去掉该参数。
 
-数据包括 `results/revised/summary.csv`、限定本次运行范围的 `manifest.json`，以及无损压缩的全部 75 次轨迹 `raw_runs.json.gz`。压缩包是 JSON 字典，以原始日志文件名为键，包含每步障碍位置、控制指令、净空和所有重新规划路径。绘图脚本可以直接从压缩包读取。新实验生成的未压缩逐次日志不会加入 Git。
+![方法比较](results/benchmark.png)
+![同图运行轨迹](results/warehouse.png)
 
-## 五个场景
+[三方法同步回放](results/warehouse.mp4) · [逐次结果](results/summary.csv) · [完整轨迹压缩包](results/raw_runs.json.gz)
 
-| 场景 | 用途 |
-| --- | --- |
-| open_control | 没有动态小车，检查新机制是否引入无谓动作 |
-| static_detour | 必须绕静态墙，检查地图、膨胀和跟踪一致性 |
-| brief_crossing | 临时横穿，检查短时间等待是否比重新找路合适 |
-| moving_crossing | 较快来回横穿，暴露缺少运动预测的局限 |
-| blocked_passage | 小车进入窄口停留，再离开；检查是否切换上方绕行通道 |
+当前二维实验共 15 次，三种方法均 5/5 无碰撞到达：
 
-动态场景的 seed 仅改变事先确定的动作时间偏移，所有方法使用完全相同的时间表。静态场景不同 seed 的几何相同，重复记录不代表五张随机地图。
+| 方法 | 平均到达时间 | 平均行程 | 五次重规划总数 |
+| --- | --- | --- | --- |
+| 固定 A*＋DWA | 78.08 s | 11.514 m | 0 |
+| 定时重规划 | 40.38 s | 12.561 m | 37 |
+| 事件触发重规划 | 37.00 s | 12.514 m | 10 |
 
-## 运行 Webots
+事件触发比固定路径节省 52.61% 时间，行程增加约 8.69%；比定时重规划节省 8.37% 时间，重规划次数减少 72.97%。这是单张自建地图上的配对结果。
 
-安装与系统匹配的 Webots R2025a，在 Webots Python 设置中选择安装了依赖的 Python。Windows 不能直接运行随目录拷贝的 Linux Webots。
+五个 seed 只改变小车动作的时间偏移（seed 0 为零，其余为 [-1,1] s），布局和起终点不变。每个 seed 的三种方法使用完全相同的运动时序。所有碰撞与超时都保留，不能把单图时间偏移实验解释为多地图泛化。
 
-打开 `worlds/blocked_passage.wbt`，默认运行 `replan_dwa`。修改 `config.json` 为 `fixed_dwa` 后重新加载仿真，即可对比；环境变量 `PLANNER_ALGO` 优先于配置文件。
+## Webots 原生仿真
 
-Linux 交互与批量运行：
+安装匹配本机系统的 Webots R2025a，选择安装了 requirements 的 Python，打开唯一世界文件 `worlds/warehouse.wbt`。默认 `replan_dwa`，可修改 `config.json` 或用环境变量 `PLANNER_ALGO` 切换方法。Windows 不可直接运行项目外的 Linux Webots 安装包。
+
+Linux 图形或无显示环境均可运行：
 
 ```bash
-# 如有需要，先 export WEBOTS_HOME=/path/to/webots
-PLANNER_ALGO=replan_dwa SCENE=blocked_passage bash run_simulation.sh
-python evaluation/webots_benchmark.py --scenes open_control blocked_passage --methods fixed_dwa replan_dwa
+PLANNER_ALGO=replan_dwa bash run_simulation.sh
+python evaluation/webots_benchmark.py --methods fixed_dwa periodic_dwa replan_dwa
+python evaluation/check_webots_smoke.py
 ```
 
-Windows 可将 `WEBOTS_BINARY` 设置为本机 Webots 可执行文件路径，再运行同一 Python 批量脚本。原生传感器由四个 90° 扇区、各 90 束组成 360° 扫描，避免全景深度投影误差；两种方法使用同一传感器配置。无显示 Linux 需要 xvfb-run，并保持渲染开启以获得激光观测。环境变量 `RECORD_VIDEO=1` 可启用 Supervisor 录制。
+可用 `WEBOTS_BINARY` 指定原生可执行文件。无显示 Linux 需要 xvfb-run，必须保留渲染以获得真实激光观测。四个 90° 原生雷达扇区组成 360° 扫描，接口依据 [Webots 官方 Lidar 文档](https://github.com/cyberbotics/webots/blob/R2025a/docs/reference/lidar.md)。设置 `RECORD_VIDEO=1` 可录制原生视频；每次运行也会导出场景截图。fast 模式截图可能滞后于仿真时刻，精确运动以同步日志为准。
 
-每次 Webots 运行使用独立 RUN_ID，必须同时产生导航器和 Supervisor 新日志，并校验算法名称与场景摘要；旧文件不会被当作新结果。
+原生验证由 GitHub Actions 执行。二维结果与原生物理结果分别报告，旧简图的验证数字不适用于当前地图。
 
-## 方法与公平比较
+## 文件依赖
 
-`navigation/core.py` 实现三个方法：
+| 内容 | 唯一来源／入口 |
+| --- | --- |
+| 地图几何、小车时间表 | navigation/scenarios.py |
+| 通用栅格与膨胀 | navigation/grid_map.py |
+| 方法名称、默认配置解析 | navigation/settings.py |
+| 激光观测速度估计 | navigation/tracking.py |
+| A*、DWA、重规划触发 | navigation/core.py |
+| 原生机器人模型 | assets/robot.wbo.in |
+| 世界生成 | scripts/generate_worlds.py → worlds/warehouse.wbt |
+| 原生适配 | controllers/coursework_navigator、coursework_supervisor |
+| 二维实验／绘图 | evaluation/benchmark.py、plot_results.py |
 
-- `fixed_dwa`：仅初始化一次静态 A* 路径，随后 DWA 局部避障。
-- `periodic_dwa`：检测到地图外观测后，按 4 s 冷却周期重规划。
-- `replan_dwa`：约 2.5 s 内位置净移动不足 0.18 m、存在额外障碍观测且冷却结束时重规划。
-
-新增点来自当前激光表面点与已知静态地图的差异，量化到 0.15 m 单元，保存 4 s 后过期。重规划失败时保留原路径并记录尝试。没有将动态小车的未来时间表、真实中心和半径提供给规划计算。
-
-三者共享相同的 0.45 m/s 速度限制、轮速限制、1.5 s 预测时域、加速度约束、360° 感知、碰撞阈值、静态地图和评价函数。这里的固定路径 baseline 是新版共享控制器，不是旧仓库 DWA 数据的重复评测。
-
-## 地图和碰撞统计
-
-唯一场景定义在 `navigation/scenarios.py`，Webots 世界由 `scripts/generate_worlds.py` 生成，二维仿真也读取同一份定义。动态小车是显式声明的预定运动学演员，运动不读取机器人位置；生成前检查其完整时间表不与静态几何相交。它们仍是脚本模型，不是具备感知、决策的行人或车辆。
-
-二维仿真使用有遮挡的解析激光与 10 ms 子步几何碰撞检查。净空是**机器人表面到障碍表面的距离**，允许出现负值；碰撞立即记为失败。Webots 由独立 Supervisor 使用实际机器人位置计算几何净空，每 32 ms 检查一次，另存真实障碍位置和最终状态。它没有被宣称为经过连续碰撞证明的安全控制器。
-
-原场景的核对见 `results/revised/legacy_audit.json`，可运行 `python evaluation/audit_legacy_scene.py` 重现。
-
-## 目录
-
-- `navigation/`：共享场景、A*、DWA、触发器、二维仿真。
-- `controllers/coursework_*`：Webots 传感器/电机适配与独立评测。
-- `controllers/robot_*`：旧实现，保留作历史对照。
-- `worlds/*.wbt`：新场景；`legacy_arena.wbt` 是原始地图。
-- `evaluation/revised_benchmark.py`、`plot_revised.py`：配对实验和可视化。
-- `evaluation/webots_benchmark.py`：原生 Webots 实验入口。
-- `tests/`：关键几何、感知、控制和地图一致性检查。
-
-## 参考资料
-
-- Fox, Burgard, Thrun. The Dynamic Window Approach to Collision Avoidance, 1997. [原论文](https://publications.ri.cmu.edu/storage/publications/pub_files/pub1/fox_dieter_1997_1/fox_dieter_1997_1.pdf)
-- Fox et al. A Hybrid Approach to Collision Avoidance, 1998. [作者页面](https://rse-lab.cs.washington.edu/abstracts/obstserver-icra98.abstract.html)
-- [Webots 官方 Supervisor API](https://github.com/cyberbotics/webots/blob/R2025a/docs/reference/supervisor.md)
-
-贡献定位是课程项目中的机制实现与对照分析，不宣称提出了新的 A*、DWA 理论或达到 SOTA。
+旧控制器、旧算法、旧地图、旧绘图入口及旧结果已从当前目录移除。当前代码不再导入旧控制器，也不再读取旧地图。原始轨迹只保留一份 gzip 压缩包，绘图直接读取它；Webots 临时日志不提交 Git。历史内容仍在 Git 历史中。

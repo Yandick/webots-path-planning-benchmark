@@ -66,7 +66,7 @@ venv.bak/
 # Webots local caches
 *.cache
 
-# Full revised runs are retained losslessly in raw_runs.json.gz.
-results/revised/*_seed*.json
+# Canonical experiment logs are retained losslessly in results/raw_runs.json.gz.
 results/webots/
 worlds/benchmark_generated.wbt
+*.wbproj

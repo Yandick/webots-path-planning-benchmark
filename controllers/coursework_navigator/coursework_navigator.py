@@ -11,6 +11,7 @@ import numpy as np
 from controller import Robot
 from navigation.core import Navigator, angle
 from navigation.scenarios import make_scene
+from navigation.settings import resolve_method
 
 
 def main():
@@ -19,8 +20,7 @@ def main():
     dt = step/1000
     meta = json.loads(robot.getCustomData())
     scene = make_scene(meta["scene"], meta["seed"])
-    config = json.loads((ROOT / "config.json").read_text(encoding="utf-8"))
-    method = os.environ.get("PLANNER_ALGO", config.get("algorithm", "replan_dwa"))
+    method = resolve_method()
     nav = Navigator(scene, method)
     left, right = robot.getDevice("left wheel motor"), robot.getDevice("right wheel motor")
     for motor in (left, right):
@@ -69,7 +69,8 @@ def main():
         left.setVelocity((v-.15*w)/.05); right.setVelocity((v+.15*w)/.05)
         rows.append({"t": t, "x": float(pose[0]), "y": float(pose[1]), "theta": float(pose[2]),
                      "v": v, "omega": w, "measured_v": velocity[0], "measured_omega": velocity[1],
-                     "roll": rpy[0], "pitch": rpy[1], "nearest_lidar_local": nearest})
+                     "roll": rpy[0], "pitch": rpy[1], "nearest_lidar_local": nearest,
+                     "tracked_obstacles": nav.tracker.snapshot()})
         if truth_path.exists() or t >= scene.duration or np.linalg.norm(pose[:2]-scene.goal) <= .25:
             break
     left.setVelocity(0.); right.setVelocity(0.)

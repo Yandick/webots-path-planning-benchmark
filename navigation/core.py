@@ -12,6 +12,8 @@ import time
 import numpy as np
 
 from .scenarios import static_distance
+from .settings import DEFAULT_METHOD, METHODS
+from .tracking import ScanTracker
 
 
 def angle(a):
@@ -100,11 +102,13 @@ class Config:
     blocked_seconds: float = 2.5
     replan_cooldown: float = 4.0
     memory_seconds: float = 4.0
+    route_blocked_seconds: float = .8
+    route_lookahead: float = 1.8
 
 
 class Navigator:
-    def __init__(self, scene, method="replan_dwa", config=None):
-        if method not in ("fixed_dwa", "replan_dwa", "periodic_dwa"):
+    def __init__(self, scene, method=DEFAULT_METHOD, config=None):
+        if method not in METHODS:
             raise ValueError(method)
         self.scene, self.method = scene, method
         self.cfg = config or Config()
@@ -121,6 +125,27 @@ class Navigator:
         self.replan_attempts = 0
         self.replan_ms = 0.
         self.steps_ms = []
+        self.tracker = ScanTracker()
+        self.route_blocked_since = None
+
+    def route_obstructed(self, position, points):
+        if not len(points):
+            return False
+        unknown = points[static_distance(points, self.scene.static) > .12]
+        if not len(unknown):
+            return False
+        dense = []
+        for a, b in zip(self.path[:-1], self.path[1:]):
+            n = max(1, int(np.linalg.norm(b-a)/.08))
+            dense.extend(a+(b-a)*u for u in np.linspace(0, 1, n, endpoint=False))
+        dense.append(self.path[-1])
+        dense = np.asarray(dense)
+        i = int(np.argmin(np.linalg.norm(dense-position, axis=1)))
+        ahead = dense[i:]
+        length = np.r_[0., np.cumsum(np.linalg.norm(np.diff(ahead, axis=0), axis=1))]
+        ahead = ahead[length <= self.cfg.route_lookahead]
+        distance = np.linalg.norm(ahead[:, None, :]-unknown[None, :, :], axis=-1)
+        return bool(np.any(distance < self.cfg.radius+self.cfg.margin+.04))
 
     def target(self, position):
         # Densify by arc length, then pick a reachable forward reference point.
@@ -133,7 +158,7 @@ class Navigator:
         i = int(np.argmin(np.linalg.norm(dense-position, axis=1)))
         j = min(i+8, len(dense)-1)
         # Prevent lookahead from jumping through a static corner.
-        while j > i+1 and not self.grid.is_line_collision_free(position, dense[j], step=.05, margin=self.cfg.radius+.04):
+        while j > i+1 and not self.grid.is_line_collision_free(position, dense[j], step=.05):
             j -= 1
         return dense[j]
 
@@ -149,13 +174,21 @@ class Navigator:
     def step(self, pose, velocity, points, t, dt):
         tick = time.perf_counter()
         p = np.asarray(pose[:2])
+        velocities = self.tracker.update(points, self.scene.static, t)
         self.update_map(points, t)
+        if self.route_obstructed(p, points):
+            if self.route_blocked_since is None:
+                self.route_blocked_since = t
+        else:
+            self.route_blocked_since = None
+        blocked_route = (self.route_blocked_since is not None and
+                         t-self.route_blocked_since >= self.cfg.route_blocked_seconds)
         self.positions.append((t, p.copy()))
         while self.positions and t-self.positions[0][0] > self.cfg.blocked_seconds+.05:
             self.positions.popleft()
         stalled = (len(self.positions)>1 and t-self.positions[0][0] >= self.cfg.blocked_seconds-.05
                    and np.linalg.norm(p-self.positions[0][1]) < .18)
-        request = ((self.method == "replan_dwa" and stalled) or
+        request = ((self.method == "replan_dwa" and (blocked_route or stalled)) or
                    (self.method == "periodic_dwa" and t >= self.cfg.replan_cooldown))
         if request and t-self.last_replan >= self.cfg.replan_cooldown and self.memory:
             self.last_replan = t
@@ -166,14 +199,16 @@ class Navigator:
             self.replan_ms += (time.perf_counter()-begin)*1000
             if new_path is not None:
                 self.path = new_path
+                self.grid = grid
                 self.replans += 1
                 self.path_history.append({"t": t, "path": new_path.tolist()})
                 self.positions.clear()
-        cmd = self.dwa(pose, velocity, self.target(p), points, dt)
+                self.route_blocked_since = None
+        cmd = self.dwa(pose, velocity, self.target(p), points, dt, velocities)
         self.steps_ms.append((time.perf_counter()-tick)*1000)
         return cmd
 
-    def dwa(self, pose, velocity, target, points, dt):
+    def dwa(self, pose, velocity, target, points, dt, point_velocities=None):
         c = self.cfg
         x, y, theta = pose
         v0, w0 = velocity
@@ -192,13 +227,24 @@ class Navigator:
         ys = y+np.cumsum(v[:, None]*np.sin(headings)*c.prediction_dt, axis=1)
         min_dist = np.full(len(v), 5.)
         if len(points):
-            local = points[np.linalg.norm(points-[x, y], axis=1) < 2.5]
+            nearby = np.linalg.norm(points-[x, y], axis=1) < 2.5
+            local = points[nearby]
             if len(local):
                 dist = (xs[:, :, None]-local[:, 0])**2+(ys[:, :, None]-local[:, 1])**2
+                if point_velocities is not None:
+                    pv = point_velocities[nearby]
+                    predicted = local[None, :, :]+times[:, None, None]*pv[None, :, :]
+                    future_dist = ((xs[:, :, None]-predicted[None, :, :, 0])**2+
+                                   (ys[:, :, None]-predicted[None, :, :, 1])**2)
+                    dist = np.minimum(dist, future_dist)
                 min_dist = np.sqrt(dist.min(axis=(1, 2)))
         valid = min_dist >= c.radius+c.margin
         # A conservative braking-distance filter is shared by all variants.
         valid &= min_dist-c.radius >= v*v/(2*c.acceleration)+.03
+        # A circular body can rotate without translating even inside the comfort
+        # margin. Keep the physical clearance requirement; translation still has
+        # to satisfy the full margin. Otherwise a stopped robot cannot turn away.
+        valid |= (v < 1e-9) & (min_dist >= c.radius+.03)
         last_heading = theta+w*times[-1]
         desired = np.arctan2(target[1]-ys[:, -1], target[0]-xs[:, -1])
         heading_err = np.abs((desired-last_heading+np.pi) % (2*np.pi)-np.pi)

@@ -3,14 +3,10 @@ from dataclasses import dataclass, field
 import hashlib
 import json
 import math
-from pathlib import Path
-import sys
 
 import numpy as np
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "controllers" / "robot_navigator"))
-from utils.grid_map import GridMap, StaticObstacle
+from .grid_map import GridMap, StaticObstacle
 
 
 @dataclass
@@ -28,11 +24,11 @@ class MovingDisc:
 @dataclass
 class Scene:
     name: str
-    start: tuple = (-4.0, 0.0)
-    goal: tuple = (4.0, 0.0)
+    start: tuple = (-4.0, -3.5)
+    goal: tuple = (4.0, 3.5)
     static: list = field(default_factory=list)
     moving: list = field(default_factory=list)
-    duration: float = 65.0
+    duration: float = 100.0
     seed: int = 0
 
     def grid(self, extra_points=None):
@@ -54,38 +50,36 @@ def box(x, y, w, h):
     return StaticObstacle("box", {"center": (x, y), "size": (w, h)})
 
 
-def make_scene(name="blocked_passage", seed=0):
+DEFAULT_SCENE = "warehouse"
+SCENES = (DEFAULT_SCENE,)
+
+
+def make_scene(name=DEFAULT_SCENE, seed=0):
     # The same seed is supplied to every method; phase/start time are fixed upfront.
     rng = np.random.default_rng(seed)
     shift = float(rng.uniform(-1.0, 1.0)) if seed else 0.0
     walls = [box(0, 5, 10.2, .2), box(0, -5, 10.2, .2),
              box(5, 0, .2, 10.2), box(-5, 0, .2, 10.2)]
-    scene = Scene(name=name, static=walls, seed=seed)
-    if name == "static_detour":
-        scene.static += [box(0, -.6, 1.2, 3.0), box(2.1, 1.4, .6, 1.4)]
-    elif name in ("blocked_passage", "brief_crossing", "moving_crossing", "open_control"):
-        # Central wall has a short passage (y=0) and a longer upper bypass (y>2.2).
-        scene.static += [box(0, -2.8, .6, 4.2), box(0, 1.45, .6, 1.5)]
-        if name == "blocked_passage":
-            # A cart enters and dwells at the passage, then exits along free space.
-            scene.moving = [MovingDisc("cart", .48,
-                [[0, 1.4, -2], [2+shift, 1.4, -2], [4+shift, 1.4, 0],
-                 [8+shift, 0, 0], [38+shift, 0, 0], [42+shift, 1.4, 0],
-                 [46+shift, 1.4, -2], [65, 1.4, -2]])]
-        elif name == "brief_crossing":
-            scene.moving = [MovingDisc("cart", .38,
-                [[0, 1.2, -2], [8+shift, 1.2, -2], [16+shift, 1.2, 2],
-                 [65, 1.2, 2]])]
-        elif name == "moving_crossing":
-            scene.moving = [MovingDisc("cart", .38,
-                [[0, -1.2, -2.5], [4+shift, -1.2, -2.5], [10+shift, -1.2, 2.5],
-                 [16+shift, -1.2, -2.5], [22+shift, -1.2, 2.5], [65, -1.2, 2.5]])]
-    else:
+    if name not in SCENES:
         raise ValueError(f"Unknown scene: {name}")
+    scene = Scene(name=name, static=walls, seed=seed)
+    # Seven shelves: a central passage, an upper bypass, and offset approach/exit
+    # aisles. These force turns before AND after the temporary blockage.
+    scene.static += [box(0, -2.8, .6, 4.2), box(0, 1.45, .6, 1.5),
+                     box(-2.65, -1.9, 2.5, .65), box(-3.1, 1.3, 1.6, 1.8),
+                     box(-1.8, 3.65, 2., .6), box(2.2, 1.7, 2., .7),
+                     box(3.3, -1.8, 1.6, 2.)]
+    scene.moving = [
+        MovingDisc("loading_cart", .48,
+            [[0, 1.4, -2], [2+shift, 1.4, -2], [8+shift, 1.4, 0],
+             [12+shift, 0, 0], [58+shift, 0, 0], [62+shift, 1.4, 0],
+             [68+shift, 1.4, -2], [100, 1.4, -2]]),
+        MovingDisc("aisle_cart", .30,
+            [[0, 3.9, 4.1], [20+shift, 3.9, 4.1], [28+shift, 3.9, 2.8],
+             [44+shift, 1.4, 2.8], [60+shift, 3.9, 2.8],
+             [70+shift, 3.9, 4.1], [100, 3.9, 4.1]]),
+    ]
     return scene
-
-
-SCENES = ("open_control", "static_detour", "brief_crossing", "moving_crossing", "blocked_passage")
 
 
 def static_distance(points, obstacles):
@@ -111,10 +105,18 @@ def clearance(scene, position, t, robot_radius=.18):
 
 
 def validate_scene(scene):
+    for obs in scene.moving:
+        schedule = np.asarray(obs.waypoints, dtype=float)
+        if (not np.isfinite(schedule).all() or np.any(np.diff(schedule[:, 0]) <= 0)
+                or schedule[0, 0] != 0 or schedule[-1, 0] < scene.duration):
+            raise ValueError(f"Invalid schedule for {obs.name}")
     for t in np.arange(0, scene.duration+.01, .05):
-        for obs in scene.moving:
+        for i, obs in enumerate(scene.moving):
             if float(static_distance(obs.position(t), scene.static)) <= obs.radius+.02:
                 raise ValueError(f"{scene.name}: {obs.name} intersects static geometry at t={t:.2f}")
+            for other in scene.moving[i+1:]:
+                if np.linalg.norm(obs.position(t)-other.position(t)) <= obs.radius+other.radius+.02:
+                    raise ValueError(f"{scene.name}: actors intersect at t={t:.2f}")
     for p in (scene.start, scene.goal):
         if clearance(scene, np.array(p), 0) <= 0:
             raise ValueError("Start/goal in collision")

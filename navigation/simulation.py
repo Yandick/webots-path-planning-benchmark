@@ -62,6 +62,7 @@ def run(scene, method="replan_dwa", dt=.10):
         velocity = v, w
         rows.append({"t": t+dt, "x": float(pose[0]), "y": float(pose[1]), "theta": float(pose[2]),
                      "v": v, "omega": w, "clearance": gap,
+                     "tracked_obstacles": nav.tracker.snapshot(),
                      "obstacles": [[*o.position(t+dt), o.radius] for o in scene.moving]})
         if collision:
             status = "collision"; break

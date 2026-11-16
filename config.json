@@ -1,17 +1,4 @@
 {
   "algorithm": "replan_dwa",
-  "description": "Sensor-triggered A* replanning + shared DWA. Environment overrides this default.",
-  "available_algorithms": [
-    "replan_dwa",
-    "fixed_dwa",
-    "periodic_dwa",
-    "informed_rrt_star_dwa",
-    "mpc",
-    "a_star_dwa",
-    "voronoi_dwa",
-    "pso_dwa",
-    "rrt_star_dwa",
-    "apf",
-    "improved_apf"
-  ]
+  "description": "Sensor-triggered A* replanning + shared DWA. PLANNER_ALGO overrides this default. Supported methods: navigation/settings.py."
 }

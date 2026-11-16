@@ -9,6 +9,7 @@ sys.path.insert(0, str(ROOT))
 import numpy as np
 from controller import Supervisor
 from navigation.scenarios import make_scene, clearance, validate_scene
+from navigation.settings import resolve_method
 
 
 def main():
@@ -19,8 +20,7 @@ def main():
     validate_scene(scene)
     nodes = [supervisor.getFromDef(f"MOVING_{i}") for i in range(len(scene.moving))]
     robot = supervisor.getFromDef("ROBOT")
-    config = json.loads((ROOT / "config.json").read_text(encoding="utf-8"))
-    method = os.environ.get("PLANNER_ALGO", config.get("algorithm", "replan_dwa"))
+    method = resolve_method()
     tag = os.environ.get("RUN_ID", f"{scene.name}_{method}_seed{scene.seed}")
     out = Path(os.environ.get("RUN_OUTPUT", str(ROOT / "results" / "webots")))
     out.mkdir(parents=True, exist_ok=True)

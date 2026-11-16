@@ -12,22 +12,22 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from navigation.scenarios import SCENES, make_scene, validate_scene
 from scripts.generate_worlds import world_text
+from navigation.settings import METHODS
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--scenes", nargs="+", choices=SCENES, default=["blocked_passage"])
     parser.add_argument("--seeds", type=int, nargs="+", default=[0])
-    parser.add_argument("--methods", nargs="+", choices=["fixed_dwa", "replan_dwa", "periodic_dwa"], default=["fixed_dwa", "replan_dwa"])
+    parser.add_argument("--methods", nargs="+", choices=METHODS, default=["fixed_dwa", "replan_dwa"])
     parser.add_argument("--timeout", type=int, default=240)
     args = parser.parse_args()
     executable = os.environ.get("WEBOTS_BINARY") or shutil.which("webots") or shutil.which("webots.exe")
     if not executable:
-        raise SystemExit("Webots not found. Set WEBOTS_BINARY to the native executable; 2D runs use revised_benchmark.py.")
+        raise SystemExit("Webots not found. Set WEBOTS_BINARY to the native executable; 2D runs use evaluation/benchmark.py.")
     out = ROOT / "results" / "webots"
     out.mkdir(parents=True, exist_ok=True)
     manifest = {"backend": "webots", "runs": []}
-    for name in args.scenes:
+    for name in SCENES:
         for seed in args.seeds:
             scene = make_scene(name, seed); validate_scene(scene)
             world = ROOT / "worlds" / "benchmark_generated.wbt"

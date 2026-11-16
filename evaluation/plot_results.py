@@ -1,310 +1,177 @@
-"""
-实验结果可视化绘图模块 (Result Plotting & Visualization)
-读取全流派规划算法实测数据，绘制 2D 轨迹全景对比图、沃罗诺伊拓扑中轴骨架网络、PSO 适应度进化收敛曲线、
-多维度量化对比柱状图以及线速度/角速度时域响应图。
-"""
-
-import os
+"""Render the single map, paired results, and a synchronized three-method replay."""
+import argparse
+import csv
+import gzip
 import json
-import math
-import numpy as np
+from pathlib import Path
+import shutil
+import sys
+
 import matplotlib
-matplotlib.use('Agg')
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-import matplotlib.patches as patches
+from matplotlib.animation import FFMpegWriter, FuncAnimation
+from matplotlib.patches import Circle, Rectangle
+import numpy as np
 
-plt.rcParams['font.sans-serif'] = ['DejaVu Sans', 'Arial', 'Helvetica']
-plt.rcParams['axes.unicode_minus'] = False
-plt.rcParams['figure.dpi'] = 300
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+from navigation.scenarios import make_scene
+from navigation.settings import METHODS, METHOD_LABELS
 
-RESULTS_DIR = os.path.join(os.path.dirname(__file__), "..", "results")
+OUT = ROOT / "results"
+COLORS = {"fixed_dwa": "#7c3aed", "periodic_dwa": "#d97706", "replan_dwa": "#0284c7"}
+CART_COLORS = ("#ef4444", "#f97316")
+plt.rcParams.update({"font.family": ["DejaVu Sans"], "font.size": 11,
+                     "axes.spines.top": False, "axes.spines.right": False})
 
-def load_data():
-    files = {
-        'A* + DWA (Grid Search)': os.path.join(RESULTS_DIR, 'trajectory_a_star_dwa.json'),
-        'Voronoi + DWA (GVD Skeleton)': os.path.join(RESULTS_DIR, 'trajectory_voronoi_dwa.json'),
-        'PSO + DWA (Swarm Intelligence)': os.path.join(RESULTS_DIR, 'trajectory_pso_dwa.json'),
-        'RRT* + DWA (Random Sampling)': os.path.join(RESULTS_DIR, 'trajectory_rrt_star_dwa.json'),
-        'Informed Bi-RRT* (Proposed SOTA)': os.path.join(RESULTS_DIR, 'trajectory_informed_rrt_star_dwa.json'),
-        'Classical APF (Khatib 1986)': os.path.join(RESULTS_DIR, 'trajectory_apf.json'),
-        'Improved APF (Ge & Cui 2000)': os.path.join(RESULTS_DIR, 'trajectory_improved_apf.json'),
-        'A* + MPC (Model Predictive)': os.path.join(RESULTS_DIR, 'trajectory_mpc.json'),
-    }
-    data = {}
-    for name, path in files.items():
-        if os.path.exists(path):
-            with open(path, 'r', encoding='utf-8') as f:
-                data[name] = json.load(f)
-    return data
 
-def plot_trajectories(data):
-    """绘制 2D 环境地图、静态/动态障碍物、Voronoi骨架网络与各算法实际执行轨迹"""
-    fig, ax = plt.subplots(figsize=(11, 11))
+def draw(ax, scene):
+    for o in scene.static:
+        x, y = o.params["center"]
+        if o.kind == "box":
+            w, h = o.params["size"]
+            patch = Rectangle((x-w/2, y-h/2), w, h)
+        else:
+            patch = Circle((x, y), o.params["radius"])
+        patch.set(facecolor="#94a3b8", edgecolor="#475569")
+        ax.add_patch(patch)
+    ax.scatter(*scene.start, c="#16a34a", s=65, zorder=8, label="Start")
+    ax.scatter(*scene.goal, c="#dc2626", marker="*", s=140, zorder=8, label="Goal")
+    ax.set(xlim=(-5, 5), ylim=(-5, 5), xlabel="X (m)", ylabel="Y (m)")
+    ax.set_aspect("equal")
+    ax.grid(alpha=.12)
 
-    ax.set_xlim(-5.2, 5.2)
-    ax.set_ylim(-5.2, 5.2)
-    ax.set_aspect('equal')
-    ax.grid(True, linestyle='--', alpha=0.45, color='#cccccc')
-    ax.set_facecolor('#fbfbfb')
 
-    # 1. 边界外墙
-    wall_color = '#334155'
-    ax.add_patch(patches.Rectangle((-5.1, 4.9), 10.2, 0.2, color=wall_color))
-    ax.add_patch(patches.Rectangle((-5.1, -5.1), 10.2, 0.2, color=wall_color))
-    ax.add_patch(patches.Rectangle((4.9, -5.1), 0.2, 10.2, color=wall_color))
-    ax.add_patch(patches.Rectangle((-5.1, -5.1), 0.2, 10.2, color=wall_color))
-
-    # 2. 静态障碍物
-    obs_color = '#64748b'
-    static_boxes = [
-        ((-0.7, -0.7), 1.4, 1.4),
-        ((-2.7, 0.3), 1.0, 2.4),
-        ((1.0, -2.0), 2.4, 1.0),
-        ((-1.3, 2.85), 2.2, 0.7),
-    ]
-    for (xy, w, h) in static_boxes:
-        ax.add_patch(patches.Rectangle(xy, w, h, facecolor=obs_color, edgecolor='#1e293b', linewidth=1.2, zorder=3))
-
-    static_cylinders = [
-        ((-1.8, -1.8), 0.5),
-        ((1.8, 1.8), 0.5),
-        ((0.2, -3.2), 0.5),
-    ]
-    for (xy, r) in static_cylinders:
-        ax.add_patch(patches.Circle(xy, r, facecolor=obs_color, edgecolor='#1e293b', linewidth=1.2, zorder=3))
-
-    # 3. 动态障碍物扫掠区域
-    ax.add_patch(patches.Rectangle((-2.85, -0.95), 3.7, 0.7, facecolor='#fee2e2', edgecolor='#ef4444',
-                                   linestyle=':', alpha=0.45, linewidth=1.2, label='Dynamic Obs 1 Sweep (H)'))
-    ax.add_patch(patches.Rectangle((0.25, -1.15), 0.7, 3.9, facecolor='#fef3c7', edgecolor='#f59e0b',
-                                   linestyle=':', alpha=0.45, linewidth=1.2, label='Dynamic Obs 2 Sweep (V)'))
-    ax.plot([-1.8, 0.4], [1.2, 2.4], color='#ec4899', linestyle=':', linewidth=2.0, label='Dynamic Obs 3 Patrol')
-
-    # 4. 绘制 Voronoi 骨架网络底图 (如果 Voronoi 数据中包含)
-    vor_data = data.get('Voronoi + DWA (GVD Skeleton)')
-    if vor_data and 'global_plan_info' in vor_data:
-        edges = vor_data['global_plan_info'].get('voronoi_edges', [])
-        for i, (p1, p2) in enumerate(edges):
-            lbl = "Voronoi Medial Axis Skeleton" if i == 0 else ""
-            ax.plot([p1[0], p2[0]], [p1[1], p2[1]], color='#cbd5e1', linestyle='-', linewidth=0.8, alpha=0.7, label=lbl, zorder=2)
-
-    # 5. 起点与终点
-    start = (-4.0, -4.0)
-    goal = (4.0, 4.0)
-    ax.plot(start[0], start[1], marker='o', markersize=11, color='#16a34a', label='Start Point (-4, -4)', zorder=6)
-    ax.plot(goal[0], goal[1], marker='*', markersize=15, color='#dc2626', label='Goal Point (4, 4)', zorder=6)
-
-    # 6. 绘制各算法实际行驶轨迹
-    colors = {
-        'A* + DWA (Grid Search)': '#1d4ed8',          # Blue
-        'Voronoi + DWA (GVD Skeleton)': '#0d9488',    # Teal
-        'PSO + DWA (Swarm Intelligence)': '#d97706',  # Amber
-        'RRT* + DWA (Random Sampling)': '#7c3aed',    # Purple
-        'Informed Bi-RRT* (Proposed SOTA)': '#0284c7',# Cyan/Sky Blue
-        'Classical APF (Khatib 1986)': '#e11d48',     # Rose Red
-        'Improved APF (Ge & Cui 2000)': '#ea580c',    # Orange
-        'A* + MPC (Model Predictive)': '#059669'      # Emerald Green
-    }
-    styles = {
-        'A* + DWA (Grid Search)': '-',
-        'Voronoi + DWA (GVD Skeleton)': '-',
-        'PSO + DWA (Swarm Intelligence)': '-.',
-        'RRT* + DWA (Random Sampling)': '--',
-        'Informed Bi-RRT* (Proposed SOTA)': '-',
-        'Classical APF (Khatib 1986)': ':',
-        'Improved APF (Ge & Cui 2000)': '--',
-        'A* + MPC (Model Predictive)': '-'
-    }
-
-    for name, info in data.items():
-        traj = info.get('trajectory', [])
-        if not traj:
-            continue
-        xs = [p['x'] for p in traj]
-        ys = [p['y'] for p in traj]
-
-        label_txt = f"{name} ({info.get('actual_path_length', 0):.1f}m, {info.get('finish_time', 0):.1f}s)"
-        if not info.get('success'):
-            label_txt += " [Trapped]"
-        ax.plot(xs, ys, color=colors[name], linestyle=styles[name], linewidth=2.4, label=label_txt, zorder=5)
-
-        if not info.get('success'):
-            ax.plot(xs[-1], ys[-1], marker='x', markersize=14, markeredgewidth=3, color='#e11d48', zorder=7)
-
-    ax.set_title("Multi-Algorithm Path Planning & Dynamic Avoidance in Webots", fontsize=15, fontweight='bold', pad=15)
-    ax.set_xlabel("X (meters)", fontsize=12)
-    ax.set_ylabel("Y (meters)", fontsize=12)
-    ax.legend(loc='lower right', framealpha=0.92, fontsize=8.8)
-
-    out_path = os.path.join(RESULTS_DIR, "trajectory_comparison.png")
-    fig.savefig(out_path, bbox_inches='tight')
+def map_figure(scene, initial_path):
+    fig, ax = plt.subplots(figsize=(9, 9))
+    draw(ax, scene)
+    p = np.asarray(initial_path)
+    ax.plot(p[:, 0], p[:, 1], "--", color="#0284c7", lw=2, label="Initial static A* path")
+    for i, o in enumerate(scene.moving):
+        waypoints = np.asarray(o.waypoints)
+        ax.plot(waypoints[:, 1], waypoints[:, 2], ":", c=CART_COLORS[i], lw=2,
+                label=f"{o.name}: scripted track")
+        ax.add_patch(Circle(o.position(30), o.radius, color=CART_COLORS[i], alpha=.8))
+    ax.annotate("Temporary loading blockage\n(t = 12..58 s, seed 0)", (0, 0),
+                (-3.9, -.3), arrowprops={"arrowstyle": "->"}, fontsize=10)
+    ax.annotate("Alternative upper aisle", (.1, 2.7),
+                (-.8, 4.4), arrowprops={"arrowstyle": "->"}, fontsize=10)
+    ax.set_title("Warehouse navigation: one map, seven shelves, two moving carts\n"
+                 "Cart footprints shown at t = 30 s; schedules are hidden from the planner", fontsize=13)
+    ax.legend(loc="lower right", fontsize=9)
+    fig.tight_layout()
+    fig.savefig(OUT / "map.png", dpi=180)
     plt.close(fig)
-    print(f"Generated: {out_path}")
 
-def plot_pso_convergence(data):
-    """绘制粒子群算法 (LDIW-PSO) 适应度迭代进化收敛曲线"""
-    pso_data = data.get('PSO + DWA (Swarm Intelligence)')
-    if not pso_data or 'global_plan_info' not in pso_data:
-        return
-    history = pso_data['global_plan_info'].get('fitness_history', [])
-    if not history:
-        return
 
-    fig, ax = plt.subplots(figsize=(8, 5))
-    ax.plot(range(len(history)), history, color='#d97706', linewidth=2.2, label='Global Best Fitness $G_{best}$')
-    ax.set_title("LDIW-PSO Fitness Evolutionary Convergence Curve", fontsize=13, fontweight='bold')
-    ax.set_xlabel("Generation / Iteration $k$", fontsize=11)
-    ax.set_ylabel("Multi-Objective Fitness Cost", fontsize=11)
-    ax.grid(True, linestyle='--', alpha=0.6)
-    ax.legend(fontsize=10.5)
-
-    # 标注初始与最终值
-    ax.annotate(f"Initial: {history[0]:.1f}", xy=(0, history[0]), xytext=(5, history[0]*0.85),
-                arrowprops=dict(arrowstyle="->", color='#d97706'), fontweight='bold', fontsize=9.5)
-    ax.annotate(f"Optimal Converged: {history[-1]:.1f}", xy=(len(history)-1, history[-1]),
-                xytext=(len(history)*0.6, history[-1] + 25),
-                arrowprops=dict(arrowstyle="->", color='#059669'), fontweight='bold', fontsize=9.5)
-
-    out_path = os.path.join(RESULTS_DIR, "pso_fitness_convergence.png")
-    fig.savefig(out_path, bbox_inches='tight')
-    plt.close(fig)
-    print(f"Generated: {out_path}")
-
-def plot_metrics(data):
-    """绘制量化对比指标柱状图"""
-    algos = list(data.keys())
-    plan_times = []
-    travel_times = []
-    path_lengths = []
-    clearances = []
-
-    for k in algos:
-        d = data[k]
-        plan_info = d.get('global_plan_info', {})
-        plan_times.append(plan_info.get('planning_time_ms', 0.5))
-        travel_times.append(d.get('finish_time', 80.0))
-        path_lengths.append(d.get('actual_path_length', 0.0))
-        cl = d.get('min_clearance', 0.3)
-        if math.isinf(cl): cl = 0.25
-        clearances.append(cl)
-
-    name_map = {
-        'A* + DWA (Grid Search)': 'A*',
-        'Voronoi + DWA (GVD Skeleton)': 'Voronoi',
-        'PSO + DWA (Swarm Intelligence)': 'PSO',
-        'RRT* + DWA (Random Sampling)': 'RRT*',
-        'Classical APF (Khatib 1986)': 'C-APF',
-        'Improved APF (Ge & Cui 2000)': 'I-APF',
-        'DRL Navigation (Deep RL)': 'DRL'
-    }
-    short_names = [name_map.get(k, k.split(' ')[0]) for k in algos]
-
-    fig, axes = plt.subplots(2, 2, figsize=(12, 8))
-    fig.suptitle("Performance Quantitative Benchmarking across 7 Algorithms", fontsize=15, fontweight='bold')
-
-    palette = ['#1d4ed8', '#0d9488', '#d97706', '#7c3aed', '#0284c7', '#e11d48', '#ea580c', '#059669'][:len(algos)]
-
-    # 1. 规划耗时
-    axes[0, 0].bar(short_names, plan_times, color=palette, width=0.55, edgecolor='#1e293b')
-    axes[0, 0].set_title("Global Planning Time (ms)", fontweight='bold')
-    axes[0, 0].set_ylabel("Milliseconds (ms)")
-    for i, v in enumerate(plan_times):
-        axes[0, 0].text(i, v + 8, f"{v:.1f}", ha='center', fontweight='bold', fontsize=9)
-
-    # 2. 导航耗时
-    axes[0, 1].bar(short_names, travel_times, color=palette, width=0.55, edgecolor='#1e293b')
-    axes[0, 1].set_title("Navigation Travel Time (s)", fontweight='bold')
-    axes[0, 1].set_ylabel("Seconds (s)")
-    for i, v in enumerate(travel_times):
-        txt = f"{v:.1f}s" if v < 75 else "Timeout"
-        axes[0, 1].text(i, min(v + 1.5, 75), txt, ha='center', fontweight='bold', fontsize=9)
-
-    # 3. 实际行驶轨迹长度
-    axes[1, 0].bar(short_names, path_lengths, color=palette, width=0.55, edgecolor='#1e293b')
-    axes[1, 0].set_title("Actual Trajectory Length (m)", fontweight='bold')
-    axes[1, 0].set_ylabel("Meters (m)")
-    for i, v in enumerate(path_lengths):
-        axes[1, 0].text(i, v + 0.3, f"{v:.2f}", ha='center', fontweight='bold', fontsize=9)
-
-    # 4. 最小避障间隙
-    axes[1, 1].bar(short_names, clearances, color=palette, width=0.55, edgecolor='#1e293b')
-    axes[1, 1].set_title("Minimum Clearance to Obstacles (m)", fontweight='bold')
-    axes[1, 1].set_ylabel("Meters (m)")
-    for i, v in enumerate(clearances):
-        axes[1, 1].text(i, v + 0.02, f"{v:.2f}", ha='center', fontweight='bold', fontsize=9)
-
-    for ax in axes.flat:
-        ax.grid(axis='y', linestyle='--', alpha=0.5)
+def figures(rows, runs, scene):
+    fig, axes = plt.subplots(1, 3, figsize=(14, 5))
+    for j, method in enumerate(METHODS):
+        selected = [r for r in rows if r["algorithm"] == method]
+        times = [float(r["finish_time"]) if r["status"] == "success" else scene.duration for r in selected]
+        replans = [int(r["replans"]) for r in selected]
+        success = sum(r["status"] == "success" for r in selected)
+        axes[0].bar(j, np.mean(times), yerr=np.std(times), color=COLORS[method], capsize=5)
+        axes[1].bar(j, np.mean(replans), yerr=np.std(replans), color=COLORS[method], capsize=5)
+        axes[2].bar(j, success/len(selected)*100, color=COLORS[method])
+        axes[2].text(j, success/len(selected)*100+2, f"{success}/{len(selected)}", ha="center")
+    for ax in axes:
+        ax.set_xticks(range(len(METHODS)), ["Fixed", "Periodic", "Event"])
+        ax.grid(axis="y", alpha=.2)
         ax.set_axisbelow(True)
-
-    plt.tight_layout()
-    out_path = os.path.join(RESULTS_DIR, "metrics_comparison.png")
-    fig.savefig(out_path, bbox_inches='tight')
+    axes[0].set(title="Arrival time (mean +/- SD)", ylabel="Seconds; failures = 100 s")
+    axes[1].set(title="Accepted replans (mean +/- SD)", ylabel="Count per trial")
+    axes[2].set(title="Collision-free success", ylabel="Percent", ylim=(0, 112))
+    fig.suptitle("One warehouse map | 5 paired schedule phases | shared sensing and local controller", fontsize=14)
+    fig.tight_layout(rect=(0, 0, 1, .93))
+    fig.savefig(OUT / "benchmark.png", dpi=180)
     plt.close(fig)
-    print(f"Generated: {out_path}")
-
-def plot_velocity_profiles(data):
-    """绘制线速度与角速度时域曲线"""
-    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(11, 7), sharex=True)
-    fig.suptitle("Robot Control Velocity Profiles over Time (v & omega)", fontsize=14, fontweight='bold')
-
-    colors = {
-        'A* + DWA (Grid Search)': '#1d4ed8',
-        'Voronoi + DWA (GVD Skeleton)': '#0d9488',
-        'PSO + DWA (Swarm Intelligence)': '#d97706',
-        'RRT* + DWA (Random Sampling)': '#7c3aed',
-        'Informed Bi-RRT* (Proposed SOTA)': '#0284c7',
-        'Classical APF (Khatib 1986)': '#e11d48',
-        'Improved APF (Ge & Cui 2000)': '#ea580c',
-        'A* + MPC (Model Predictive)': '#059669'
-    }
-    name_map = {
-        'A* + DWA (Grid Search)': 'A*',
-        'Voronoi + DWA (GVD Skeleton)': 'Voronoi',
-        'PSO + DWA (Swarm Intelligence)': 'PSO',
-        'RRT* + DWA (Random Sampling)': 'RRT*',
-        'Informed Bi-RRT* (Proposed SOTA)': 'Informed-RRT*',
-        'Classical APF (Khatib 1986)': 'C-APF',
-        'Improved APF (Ge & Cui 2000)': 'I-APF',
-        'A* + MPC (Model Predictive)': 'MPC'
-    }
-
-    for name, info in data.items():
-        traj = info.get('trajectory', [])
-        if not traj:
-            continue
-        ts = [p['t'] for p in traj]
-        vs = [p['v'] for p in traj]
-        ws = [p['omega'] for p in traj]
-
-        lbl = name_map.get(name, name.split(' ')[0])
-        ax1.plot(ts, vs, label=lbl, color=colors[name], linewidth=1.5)
-        ax2.plot(ts, ws, label=lbl, color=colors[name], linewidth=1.5)
-
-    ax1.set_ylabel("Linear Velocity v (m/s)", fontsize=11)
-    ax1.grid(True, linestyle='--', alpha=0.5)
-    ax1.legend(loc='upper right', fontsize=8.5)
-
-    ax2.set_ylabel("Angular Velocity omega (rad/s)", fontsize=11)
-    ax2.set_xlabel("Simulation Time (s)", fontsize=11)
-    ax2.grid(True, linestyle='--', alpha=0.5)
-
-    plt.tight_layout()
-    out_path = os.path.join(RESULTS_DIR, "velocity_profiles.png")
-    fig.savefig(out_path, bbox_inches='tight')
+    fig, axes = plt.subplots(1, 3, figsize=(17, 6.5))
+    for ax, run in zip(axes, runs):
+        draw(ax, scene)
+        initial = np.asarray(run["initial_path"])
+        ax.plot(initial[:, 0], initial[:, 1], "--", c="#64748b", lw=1.2, label="Initial path")
+        for i, h in enumerate(run["path_history"]):
+            p = np.asarray(h["path"])
+            ax.plot(p[:, 0], p[:, 1], "--", c=COLORS[run["algorithm"]], alpha=.45,
+                    label="Replanned paths" if i == 0 else None)
+        tr = run["trajectory"]
+        ax.plot([p["x"] for p in tr], [p["y"] for p in tr], c=COLORS[run["algorithm"]], lw=2.3, label="Executed")
+        for i, o in enumerate(scene.moving):
+            ax.add_patch(Circle(o.position(30), o.radius, color=CART_COLORS[i], alpha=.7))
+        ax.set_title(f"{METHOD_LABELS[run['algorithm']]}\n{run['status']}: {run['finish_time']:.1f}s; replans={run['replans']}")
+        ax.legend(loc="lower right", fontsize=8)
+    fig.suptitle("Seed 0 | 2D kinematic simulation\nCart snapshots at t=30s; trajectories cover the full run", fontsize=14)
+    fig.tight_layout(rect=(0, 0, 1, .91))
+    fig.savefig(OUT / "warehouse.png", dpi=180)
     plt.close(fig)
-    print(f"Generated: {out_path}")
+
+
+def video(runs, scene):
+    ffmpeg = shutil.which("ffmpeg")
+    if not ffmpeg:
+        raise RuntimeError("ffmpeg required for --video")
+    plt.rcParams["animation.ffmpeg_path"] = ffmpeg
+    fig, axes = plt.subplots(1, 3, figsize=(19.2, 7.2))
+    fig.subplots_adjust(top=.82, bottom=.15, left=.04, right=.98, wspace=.18)
+    artists = []
+    for ax, run in zip(axes, runs):
+        draw(ax, scene)
+        ax.set_title(METHOD_LABELS[run["algorithm"]], fontsize=14)
+        trail, = ax.plot([], [], color=COLORS[run["algorithm"]], lw=2)
+        planned, = ax.plot([], [], "--", c=COLORS[run["algorithm"]], lw=1.1)
+        body = Circle(scene.start, .18, color=COLORS[run["algorithm"]], zorder=9)
+        ax.add_patch(body)
+        carts = []
+        for i, o in enumerate(scene.moving):
+            cart = Circle(o.position(0), o.radius, color=CART_COLORS[i], zorder=8)
+            ax.add_patch(cart)
+            carts.append(cart)
+        label = ax.text(.02, .97, "", transform=ax.transAxes, va="top", fontsize=10)
+        artists.append((trail, planned, body, carts, label))
+    clock = fig.suptitle("", fontsize=20)
+    fig.text(.5, .045, "2D kinematic simulation | identical cart schedules | scan-derived velocity estimates | 3x playback", ha="center", fontsize=12)
+
+    def update(t):
+        clock.set_text(f"Warehouse: t = {t:.1f} s")
+        for run, (trail, planned, body, carts, label) in zip(runs, artists):
+            tr = run["trajectory"]
+            ts = np.asarray([p["t"] for p in tr])
+            i = max(0, min(len(tr)-1, np.searchsorted(ts, t)-1))
+            trail.set_data([p["x"] for p in tr[:i+1]], [p["y"] for p in tr[:i+1]])
+            body.center = (float(np.interp(t, ts, [p["x"] for p in tr])),
+                           float(np.interp(t, ts, [p["y"] for p in tr])))
+            for cart, o in zip(carts, scene.moving):
+                cart.center = o.position(t)
+            history = [h for h in run["path_history"] if h["t"] <= t]
+            p = np.asarray(history[-1]["path"] if history else run["initial_path"])
+            planned.set_data(p[:, 0], p[:, 1])
+            label.set_text(f"Replans: {len(history)}"+(f" | {run['status']}" if t >= ts[-1] else ""))
+        return []
+
+    end = max(r["finish_time"] for r in runs)
+    anim = FuncAnimation(fig, update, frames=np.arange(0, end+.25, .25), interval=1000/12)
+    anim.save(OUT / "warehouse.mp4", writer=FFMpegWriter(fps=12, codec="libx264", bitrate=2500,
+              extra_args=["-pix_fmt", "yuv420p", "-movflags", "+faststart"]), dpi=100)
+    plt.close(fig)
+
 
 def main():
-    data = load_data()
-    if not data:
-        print("No trajectory data found!")
-        return
-    plot_trajectories(data)
-    plot_pso_convergence(data)
-    plot_metrics(data)
-    plot_velocity_profiles(data)
-    print("All enhanced charts generated successfully!")
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--video", action="store_true")
+    args = parser.parse_args()
+    with (OUT / "summary.csv").open(encoding="utf-8") as f:
+        rows = list(csv.DictReader(f))
+    with gzip.open(OUT / "raw_runs.json.gz", "rt", encoding="utf-8") as f:
+        archive = json.load(f)
+    scene = make_scene()
+    runs = [archive[f"{scene.name}_{m}_seed0.json"] for m in METHODS]
+    map_figure(scene, runs[0]["initial_path"])
+    figures(rows, runs, scene)
+    if args.video:
+        video(runs, scene)
+
 
 if __name__ == "__main__":
     main()

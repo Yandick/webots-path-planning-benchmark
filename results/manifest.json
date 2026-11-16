@@ -1,0 +1,51 @@
+{
+  "backend": "kinematic_2d",
+  "scene": "warehouse",
+  "seeds": [
+    0,
+    1,
+    2,
+    3,
+    4
+  ],
+  "methods": [
+    "fixed_dwa",
+    "periodic_dwa",
+    "replan_dwa"
+  ],
+  "runs": [
+    "warehouse_fixed_dwa_seed0.json",
+    "warehouse_periodic_dwa_seed0.json",
+    "warehouse_replan_dwa_seed0.json",
+    "warehouse_fixed_dwa_seed1.json",
+    "warehouse_periodic_dwa_seed1.json",
+    "warehouse_replan_dwa_seed1.json",
+    "warehouse_fixed_dwa_seed2.json",
+    "warehouse_periodic_dwa_seed2.json",
+    "warehouse_replan_dwa_seed2.json",
+    "warehouse_fixed_dwa_seed3.json",
+    "warehouse_periodic_dwa_seed3.json",
+    "warehouse_replan_dwa_seed3.json",
+    "warehouse_fixed_dwa_seed4.json",
+    "warehouse_periodic_dwa_seed4.json",
+    "warehouse_replan_dwa_seed4.json"
+  ],
+  "time_step_s": 0.1,
+  "collision_check_step_s": 0.01,
+  "time_budget_s": 100.0,
+  "config": {
+    "max_speed": 0.45,
+    "max_omega": 1.5,
+    "acceleration": 0.8,
+    "angular_acceleration": 3.0,
+    "radius": 0.18,
+    "margin": 0.1,
+    "horizon": 1.5,
+    "prediction_dt": 0.15,
+    "blocked_seconds": 2.5,
+    "replan_cooldown": 4.0,
+    "memory_seconds": 4.0,
+    "route_blocked_seconds": 0.8,
+    "route_lookahead": 1.8
+  }
+}

@@ -9,6 +9,7 @@ import numpy as np
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from navigation.scenarios import make_scene, static_distance
+from navigation.settings import METHODS
 
 
 def main():
@@ -32,12 +33,13 @@ def main():
         # Includes one-step sensor lag, polygon tessellation and rasterization error.
         assert errors and max(errors)<.08, (run["scene"], run["algorithm"], max(errors))
         print(f"{run['scene']} {run['algorithm']}: native nearest-point geometry error max={max(errors):.4f}m")
-    indexed = {(r["scene"],r["algorithm"]):r for r in runs}
-    fixed = indexed[("blocked_passage", "fixed_dwa")]
-    proposed = indexed[("blocked_passage", "replan_dwa")]
+    indexed = {r["algorithm"]:r for r in runs}
+    assert set(indexed) == set(METHODS), "Missing native method run"
+    fixed = indexed["fixed_dwa"]
+    proposed = indexed["replan_dwa"]
     assert proposed["replans"]>=1, "Blocked run never adopted a new route"
     assert proposed["finish_time"]<fixed["finish_time"], "Blocked-route mechanism did not improve arrival time"
-    print(f"Native blocked passage: {fixed['finish_time']:.3f}s -> {proposed['finish_time']:.3f}s")
+    print(f"Native warehouse: {fixed['finish_time']:.3f}s -> {proposed['finish_time']:.3f}s")
 
 
 if __name__ == "__main__":
