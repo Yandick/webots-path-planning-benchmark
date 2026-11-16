@@ -19,6 +19,23 @@ def world_text(scene):
     robot = robot.replace("rotation 0 0 1 0.785398", "rotation 0 0 1 0", 1)
     robot = robot.replace('controller "robot_navigator"', 'controller "coursework_navigator"')
     robot = robot.replace("minRange 0.22", "minRange 0.03")
+    lidar_start = robot.index('        Lidar {')
+    lidar_end = robot.index('\n        }', lidar_start)+len('\n        }')
+    sectors = []
+    for name, yaw in (("lidar", 0), ("lidar_left", 1.5707963267948966),
+                      ("lidar_back", 3.141592653589793), ("lidar_right", -1.5707963267948966)):
+        sectors.append(f'''        Lidar {{
+          name "{name}"
+          rotation 0 0 1 {yaw}
+          horizontalResolution 90
+          numberOfLayers 1
+          near 0.01
+          minRange 0.03
+          maxRange 5
+          projection "cylindrical"
+          fieldOfView 1.5707963267948966
+        }}''')
+    robot = robot[:lidar_start]+"\n".join(sectors)+robot[lidar_end:]
     robot = robot.replace("mass 3.0", "density -1\n    mass 3.0")
     meta = json.dumps(json.dumps({"scene": scene.name, "seed": scene.seed}))
     robot = robot.replace('name "robot"', f'customData {meta}\n  name "robot"')

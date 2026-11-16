@@ -25,10 +25,13 @@ def main():
     left, right = robot.getDevice("left wheel motor"), robot.getDevice("right wheel motor")
     for motor in (left, right):
         motor.setPosition(float("inf")); motor.setVelocity(0.)
-    gps, imu, lidar = [robot.getDevice(n) for n in ("gps", "inertial_unit", "lidar")]
-    for device in (gps, imu, lidar):
+    gps, imu = [robot.getDevice(n) for n in ("gps", "inertial_unit")]
+    lidars = [(robot.getDevice(name), yaw) for name, yaw in
+              (("lidar",0.), ("lidar_left",math.pi/2), ("lidar_back",math.pi), ("lidar_right",-math.pi/2))]
+    for device in (gps, imu, *(sensor for sensor, _ in lidars)):
         device.enable(step)
-    lidar.enablePointCloud()
+    for sensor, _ in lidars:
+        sensor.enablePointCloud()
     out = Path(os.environ.get("RUN_OUTPUT", str(ROOT / "results" / "webots")))
     out.mkdir(parents=True, exist_ok=True)
     tag = os.environ.get("RUN_ID", f"{scene.name}_{method}_seed{scene.seed}")
@@ -46,8 +49,15 @@ def main():
                         angle(pose[2]-previous[2])/dt)
         previous = pose.copy()
         # Use native local point coordinates instead of guessing range-image ordering.
-        cloud = np.array([[p.x, p.y, p.z] for p in lidar.getPointCloud()
-                          if math.isfinite(p.x) and math.isfinite(p.y) and math.isfinite(p.z)])
+        sectors = []
+        for sensor, yaw in lidars:
+            cloud = np.array([[p.x, p.y, p.z] for p in sensor.getPointCloud()
+                              if math.isfinite(p.x) and math.isfinite(p.y) and math.isfinite(p.z)])
+            if len(cloud):
+                c, s = math.cos(yaw), math.sin(yaw)
+                cloud[:, :2] = cloud[:, :2] @ np.array([[c,s],[-s,c]])
+                sectors.append(cloud)
+        cloud = np.vstack(sectors) if sectors else np.empty((0,3))
         local = cloud[:, :2] if len(cloud) else np.empty((0, 2))
         nearest = cloud[int(np.argmin(np.linalg.norm(local, axis=1)))].tolist() if len(cloud) else None
         if len(local):

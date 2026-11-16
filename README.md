@@ -7,8 +7,8 @@
 ## 目前完成的验证
 
 - 已运行 **二维差速运动学仿真**：5 个场景 × 5 个配对时间偏移 × 3 种方法，共 75 次。
-- 持续堵路场景：固定路径平均 **52.04 s**，阻塞触发 **36.44 s**，减少 **29.98%**；两者均 5/5 到达且无几何碰撞。
-- 定时重规划在该场景平均 **33.30 s**，共重规划 32 次；阻塞触发共 4 次。事件触发减少计算次数，但并非最快。
+- 持续堵路场景：固定路径平均 **52.04 s**，阻塞触发 **37.90 s**，减少 **27.17%**；两者均 5/5 到达且无几何碰撞。
+- 定时重规划在该场景平均 **33.28 s**，共重规划 40 次；阻塞触发共 12 次。事件触发减少计算次数，但并非最快。
 - 短暂横穿和快速横穿仍有碰撞，完整保留。方法解决的是持久阻塞后的路线切换，不具备运动预测能力。
 - **Webots 适配器和世界已生成**，原生物理运行结果单独存储在 `results/webots/`，不把二维数字写成 Webots 实测。GitHub Actions 另设原生 Webots 控制器检查，实际状态以 Actions 日志为准。
 
@@ -56,7 +56,7 @@ PLANNER_ALGO=replan_dwa SCENE=blocked_passage bash run_simulation.sh
 python evaluation/webots_benchmark.py --scenes open_control blocked_passage --methods fixed_dwa replan_dwa
 ```
 
-Windows 可将 `WEBOTS_BINARY` 设置为本机 Webots 可执行文件路径，再运行同一 Python 批量脚本。无显示 Linux 需要 xvfb-run，并保持渲染开启以获得激光观测。环境变量 `RECORD_VIDEO=1` 可启用 Supervisor 录制。
+Windows 可将 `WEBOTS_BINARY` 设置为本机 Webots 可执行文件路径，再运行同一 Python 批量脚本。原生传感器由四个 90° 扇区、各 90 束组成 360° 扫描，避免全景深度投影误差；两种方法使用同一传感器配置。无显示 Linux 需要 xvfb-run，并保持渲染开启以获得激光观测。环境变量 `RECORD_VIDEO=1` 可启用 Supervisor 录制。
 
 每次 Webots 运行使用独立 RUN_ID，必须同时产生导航器和 Supervisor 新日志，并校验算法名称与场景摘要；旧文件不会被当作新结果。
 

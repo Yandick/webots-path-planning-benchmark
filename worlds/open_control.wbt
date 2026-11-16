@@ -79,12 +79,47 @@ DEF ROBOT Robot {
       children [
         Lidar {
           name "lidar"
-          horizontalResolution 360
+          rotation 0 0 1 0
+          horizontalResolution 90
           numberOfLayers 1
+          near 0.01
           minRange 0.03
-          maxRange 6.0
-          fieldOfView 6.2831853
-          defaultFrequency 20
+          maxRange 5
+          projection "cylindrical"
+          fieldOfView 1.5707963267948966
+        }
+        Lidar {
+          name "lidar_left"
+          rotation 0 0 1 1.5707963267948966
+          horizontalResolution 90
+          numberOfLayers 1
+          near 0.01
+          minRange 0.03
+          maxRange 5
+          projection "cylindrical"
+          fieldOfView 1.5707963267948966
+        }
+        Lidar {
+          name "lidar_back"
+          rotation 0 0 1 3.141592653589793
+          horizontalResolution 90
+          numberOfLayers 1
+          near 0.01
+          minRange 0.03
+          maxRange 5
+          projection "cylindrical"
+          fieldOfView 1.5707963267948966
+        }
+        Lidar {
+          name "lidar_right"
+          rotation 0 0 1 -1.5707963267948966
+          horizontalResolution 90
+          numberOfLayers 1
+          near 0.01
+          minRange 0.03
+          maxRange 5
+          projection "cylindrical"
+          fieldOfView 1.5707963267948966
         }
       ]
     }
