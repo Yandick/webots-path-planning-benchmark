@@ -46,8 +46,10 @@ def main():
                         angle(pose[2]-previous[2])/dt)
         previous = pose.copy()
         # Use native local point coordinates instead of guessing range-image ordering.
-        local = np.array([[p.x, p.y] for p in lidar.getPointCloud()
-                          if math.isfinite(p.x) and math.isfinite(p.y)])
+        cloud = np.array([[p.x, p.y, p.z] for p in lidar.getPointCloud()
+                          if math.isfinite(p.x) and math.isfinite(p.y) and math.isfinite(p.z)])
+        local = cloud[:, :2] if len(cloud) else np.empty((0, 2))
+        nearest = cloud[int(np.argmin(np.linalg.norm(local, axis=1)))].tolist() if len(cloud) else None
         if len(local):
             cs, sn = math.cos(pose[2]), math.sin(pose[2])
             points = local @ np.array([[cs, sn], [-sn, cs]])+pose[:2]
@@ -56,7 +58,8 @@ def main():
         v, w = nav.step(pose, velocity, points, t, dt)
         left.setVelocity((v-.15*w)/.05); right.setVelocity((v+.15*w)/.05)
         rows.append({"t": t, "x": float(pose[0]), "y": float(pose[1]), "theta": float(pose[2]),
-                     "v": v, "omega": w, "measured_v": velocity[0], "measured_omega": velocity[1]})
+                     "v": v, "omega": w, "measured_v": velocity[0], "measured_omega": velocity[1],
+                     "roll": rpy[0], "pitch": rpy[1], "nearest_lidar_local": nearest})
         if truth_path.exists() or t >= scene.duration or np.linalg.norm(pose[:2]-scene.goal) <= .25:
             break
     left.setVelocity(0.); right.setVelocity(0.)
