@@ -67,7 +67,7 @@ def main():
         try:
             with open(config_path, "r", encoding="utf-8") as f:
                 cfg_data = json.load(f)
-                algo = cfg_data.get("algorithm", algo).lower()
+                algo = os.environ.get("PLANNER_ALGO", cfg_data.get("algorithm", algo)).lower()
         except Exception as e:
             print(f"[Navigator] 警告: 读取 config.json 失败: {e}")
 

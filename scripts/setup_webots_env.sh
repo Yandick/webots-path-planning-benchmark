@@ -1,5 +1,12 @@
 #!/usr/bin/env bash
-# Webots Environment Setup
-export WEBOTS_HOME="/data/yhwu/robot/webots"
-export PATH="/data/yhwu/miniconda3/envs/memrec/bin:$WEBOTS_HOME:/data/yhwu/robot/tools/xvfb/usr/bin:$PATH"
-export PYTHONPATH="$WEBOTS_HOME/lib/controller/python${PYTHONPATH:+:$PYTHONPATH}"
+# Set WEBOTS_HOME explicitly when Webots is not installed in a standard location.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ -z "${WEBOTS_HOME:-}" ]; then
+  for candidate in "$SCRIPT_DIR/../../webots" /usr/local/webots /opt/webots; do
+    if [ -x "$candidate/webots" ]; then export WEBOTS_HOME="$candidate"; break; fi
+  done
+fi
+if [ -n "${WEBOTS_HOME:-}" ]; then
+  export PATH="$WEBOTS_HOME:$PATH"
+  export WEBOTS_BINARY="${WEBOTS_BINARY:-$WEBOTS_HOME/webots}"
+fi

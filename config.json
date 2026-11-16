@@ -1,7 +1,10 @@
 {
-  "algorithm": "informed_rrt_star_dwa",
-  "description": "Selected default planner for Webots robot navigation.",
+  "algorithm": "replan_dwa",
+  "description": "Sensor-triggered A* replanning + shared DWA. Environment overrides this default.",
   "available_algorithms": [
+    "replan_dwa",
+    "fixed_dwa",
+    "periodic_dwa",
     "informed_rrt_star_dwa",
     "mpc",
     "a_star_dwa",

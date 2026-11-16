@@ -1,0 +1,42 @@
+name: Navigation checks
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  geometry-and-control:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install -r requirements.txt
+      - run: python -m unittest discover -s tests -v
+  webots-smoke:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    container:
+      image: cyberbotics/webots:R2025a-ubuntu22.04
+      options: --user root
+    env:
+      WEBOTS_BINARY: /usr/local/webots/webots
+      WEBOTS_HOME: /usr/local/webots
+      QTWEBENGINE_DISABLE_SANDBOX: '1'
+      LIBGL_ALWAYS_SOFTWARE: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install controller dependencies
+        run: |
+          apt-get update -qq
+          apt-get install -y python3-pip xvfb xauth
+          python3 -m pip install -r requirements.txt
+      - name: Run both controllers in native Webots
+        run: python3 evaluation/webots_benchmark.py --scenes open_control blocked_passage --methods fixed_dwa replan_dwa --timeout 150
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: webots-controller-logs
+          path: results/webots/

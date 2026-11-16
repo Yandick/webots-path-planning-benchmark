@@ -41,7 +41,8 @@ class GridMap:
         max_y: float = 5.0,
         resolution: float = 0.05,
         robot_radius: float = 0.20,
-        safety_margin: float = 0.12
+        safety_margin: float = 0.12,
+        obstacles: Optional[List[StaticObstacle]] = None
     ):
         self.min_x = min_x
         self.max_x = max_x
@@ -76,6 +77,8 @@ class GridMap:
             StaticObstacle('cylinder', {'center': (0.2, -3.2), 'radius': 0.5}),
         ]
 
+        if obstacles is not None:
+            self.obstacles = list(obstacles)
         self._rasterize_and_inflate()
 
     def _rasterize_and_inflate(self):
