@@ -50,7 +50,7 @@ def run(scene, method=DEFAULT_METHOD, dt=.10):
             status = "planning_failed"
             rows.append({"t": 0., "x": float(pose[0]), "y": float(pose[1]), "theta": float(pose[2]),
                          "v": 0., "omega": 0., "clearance": clearance(scene, pose[:2], 0),
-                         "tracked_obstacles": [], "obstacles": [[*o.position(0), o.radius] for o in scene.moving]})
+                         "observed_dynamic_cells": [], "obstacles": [[*o.position(0), o.radius] for o in scene.moving]})
             min_gap = rows[-1]["clearance"]
             break
         points = scan(scene, pose, t)
@@ -69,15 +69,16 @@ def run(scene, method=DEFAULT_METHOD, dt=.10):
                 break
         distance += float(np.linalg.norm(pose[:2]-old[:2]))
         velocity = v, w
-        rows.append({"t": t+dt, "x": float(pose[0]), "y": float(pose[1]), "theta": float(pose[2]),
+        observed_time = t+(j+1)*small
+        rows.append({"t": observed_time, "x": float(pose[0]), "y": float(pose[1]), "theta": float(pose[2]),
                      "v": v, "omega": w, "clearance": gap,
-                     "tracked_obstacles": nav.tracker.snapshot(),
-                     "obstacles": [[*o.position(t+dt), o.radius] for o in scene.moving]})
+                     "observed_dynamic_cells": nav.observation.snapshot(),
+                     "obstacles": [[*o.position(observed_time), o.radius] for o in scene.moving]})
         if collision:
             status = "collision"; break
         if np.linalg.norm(pose[:2]-scene.goal) < .25:
             status = "success"; break
-    return {**control_metrics(rows, dt),
+    return {**nav.diagnostics(), **control_metrics(rows, dt),
             **(path_metrics(nav.initial_path) if method not in ("apf", "dwa") else {"planned_peak_curvature": None}),
             "backend": "kinematic_2d", "scene": scene.name, "seed": scene.seed,
             "scene_sha256": scene.signature(), "algorithm": method, "config": asdict(nav.cfg),

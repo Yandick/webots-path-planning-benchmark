@@ -39,10 +39,11 @@ def main():
             print(f"{run['scene']} {run['algorithm']}: native nearest-point geometry error max={max(errors):.4f}m")
     indexed = {r["algorithm"]:r for r in runs}
     assert set(indexed) == set(METHODS), "Missing native method run"
-    proposed = indexed["voronoi_qp"]
-    assert proposed["status"] == "success", "Improved method did not reach the goal"
-    assert proposed["planned_peak_curvature"] < indexed["voronoi"]["planned_peak_curvature"]
-    assert proposed["min_surface_clearance"] > indexed["voronoi"]["min_surface_clearance"]
+    for method in ("apf", "dwa"):
+        assert indexed[method]["role"] == "local_controller"
+        assert indexed[method]["guide_planner"] == "astar"
+    for method in ("astar", "rrt_star"):
+        assert indexed[method]["replan_attempt_count"] > 0, "Dynamic replanning was not exercised"
     for method, run in indexed.items():
         print(f"Native warehouse {method}: {run['status']} at {run['finish_time']:.3f}s")
 

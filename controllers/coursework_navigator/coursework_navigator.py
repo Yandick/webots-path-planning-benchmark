@@ -71,11 +71,11 @@ def main():
         rows.append({"t": t, "x": float(pose[0]), "y": float(pose[1]), "theta": float(pose[2]),
                      "v": v, "omega": w, "measured_v": velocity[0], "measured_omega": velocity[1],
                      "roll": rpy[0], "pitch": rpy[1], "nearest_lidar_local": nearest,
-                     "tracked_obstacles": nav.tracker.snapshot()})
+                     "observed_dynamic_cells": nav.observation.snapshot()})
         if nav.planning_failed or truth_path.exists() or t >= scene.duration or np.linalg.norm(pose[:2]-scene.goal) <= .25:
             break
     left.setVelocity(0.); right.setVelocity(0.)
-    result = {**control_metrics(rows, dt),
+    result = {**nav.diagnostics(), **control_metrics(rows, dt),
               **(path_metrics(nav.initial_path) if method not in ("apf", "dwa") else {"planned_peak_curvature": None}),
               "backend": "webots", "scene": scene.name, "seed": scene.seed,
               "scene_sha256": scene.signature(), "algorithm": method,

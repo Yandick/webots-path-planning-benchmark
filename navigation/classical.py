@@ -131,23 +131,3 @@ def voronoi_route(grid, start, goal):
 def voronoi_path(grid, start, goal):
     path = voronoi_route(grid, start, goal)
     return None if path is None else shortcut(grid, path)
-
-
-def apf_command(pose, velocity, goal, points, dt, config):
-    p = np.asarray(pose[:2])
-    delta = np.asarray(goal)-p
-    distance = np.linalg.norm(delta)
-    force = 1.2*delta/max(distance, 1e-9)*min(distance, 2.)
-    if len(points):
-        away = p-points
-        center_dist = np.linalg.norm(away, axis=1)
-        gap = np.maximum(center_dist-config.radius, .03)
-        active = gap < 1.2
-        magnitude = .8*(1/gap[active]-1/1.2)/gap[active]**2
-        directions = away[active]/np.maximum(center_dist[active, None], 1e-9)
-        force += np.sum(magnitude[:, None]*directions, axis=0)*(2*np.pi/len(points))
-    desired = math.atan2(force[1], force[0])
-    error = (desired-pose[2]+math.pi) % (2*math.pi)-math.pi
-    v = config.max_speed*max(0., math.cos(error))*min(1., distance/.8)
-    w = float(np.clip(2*error, -config.max_omega, config.max_omega))
-    return v, w

@@ -11,8 +11,9 @@ import time
 import numpy as np
 
 from .settings import DEFAULT_METHOD, METHODS
-from .tracking import ScanTracker
-from .classical import rrt_star, voronoi_path, apf_command
+from .observation_map import ObservationMap
+from .local import apf_command, dwa_command
+from .classical import rrt_star, voronoi_path
 from .smoothing import voronoi_qp_path
 from .metrics import resample_path
 
@@ -69,8 +70,9 @@ class Config:
     angular_acceleration: float = 3.
     radius: float = .18
     margin: float = .10
-    horizon: float = 1.5
-    prediction_dt: float = .15
+    horizon: float = 1.7
+    replan_period: float = 1.0
+    observation_retention: float = 1.0
 
 
 class Navigator:
@@ -79,52 +81,97 @@ class Navigator:
             raise ValueError(method)
         self.scene, self.method = scene, method
         self.cfg = config or Config()
-        self.grid = scene.grid()
+        self.observation = ObservationMap(scene, self.cfg.observation_retention)
+        self.grid = self.observation.grid
+        self.role = "local_controller" if method in ("apf", "dwa") else "global_planner"
+        self.guide_planner = "astar" if self.role == "local_controller" else method
+        self.plan_attempts = []
+        self.route_updates = []
+        self.steps_ms = []
+        self.next_route_check = 0.
         begin = time.perf_counter()
-        if method == "rrt_star":
-            self.path = rrt_star(self.grid, scene.start, scene.goal, seed=scene.seed)
-        elif method == "voronoi":
-            self.path = voronoi_path(self.grid, scene.start, scene.goal)
-        elif method == "voronoi_qp":
-            self.path = voronoi_qp_path(self.grid, scene.start, scene.goal)
-        elif method in ("apf", "dwa"):
-            self.path = np.asarray([scene.start, scene.goal])
-        else:
-            self.path = astar(self.grid, scene.start, scene.goal)
+        self.path = self.plan(scene.start)
         self.planning_time_ms = (time.perf_counter()-begin)*1000
         self.planning_failed = self.path is None
         if self.planning_failed:
             self.path = np.asarray([scene.start])
         self.initial_path = self.path.copy()
-        self.steps_ms = []
-        self.tracker = ScanTracker()
+        self.route_updates.append({"t": 0., "reason": "initial", "path": self.path.tolist()})
 
-    def target(self, position):
-        # Densify by arc length, then pick a reachable forward reference point.
+    def plan(self, start):
+        start = np.asarray(start)
+        connector = None
+        if not self.grid.is_collision_free_point(*start):
+            # Inflation is a planning comfort region, not a physical obstacle.
+            # Find a checked escape connection without clearing any occupied cell.
+            ys, xs = np.nonzero(self.grid.inflated_grid == 0)
+            candidates = np.column_stack((self.grid.min_x+(xs+.5)*self.grid.resolution,
+                                          self.grid.min_y+(ys+.5)*self.grid.resolution))
+            distance = np.linalg.norm(candidates-start, axis=1)
+            for i in np.argsort(distance):
+                if distance[i] > .8:
+                    break
+                if self.grid.is_line_collision_free(start, candidates[i], margin=self.cfg.radius+.03):
+                    connector, start = start, candidates[i]
+                    break
+            if connector is None:
+                return None
+        if self.guide_planner == "rrt_star":
+            path = rrt_star(self.grid, start, self.scene.goal,
+                            seed=self.scene.seed+1009*len(self.plan_attempts))
+        elif self.guide_planner == "voronoi":
+            path = voronoi_path(self.grid, start, self.scene.goal)
+        elif self.guide_planner == "voronoi_qp":
+            path = voronoi_qp_path(self.grid, start, self.scene.goal)
+        else:
+            path = astar(self.grid, start, self.scene.goal)
+        return np.vstack((connector, path)) if connector is not None and path is not None else path
+
+    def remaining_path(self, position):
         dense = resample_path(self.path, .08)
         i = int(np.argmin(np.linalg.norm(dense-position, axis=1)))
-        j = min(i+8, len(dense)-1)
-        # Prevent lookahead from jumping through a static corner.
-        while j > i+1 and not self.grid.is_line_collision_free(position, dense[j], step=.05):
+        return dense[i:]
+
+    def target(self, position):
+        dense = self.remaining_path(position)
+        j = min(8, len(dense)-1)
+        margin = None if self.grid.is_collision_free_point(*position) else self.cfg.radius+.03
+        while j > 1 and not self.grid.is_line_collision_free(position, dense[j], margin=margin):
             j -= 1
         return dense[j]
+
+    def update_route(self, pose, points, t):
+        self.observation.update(pose[:2], points, t)
+        if t+1e-9 < self.next_route_check:
+            return
+        if not self.observation.blocks(self.remaining_path(pose[:2])):
+            return
+        self.next_route_check = t+self.cfg.replan_period
+        begin = time.perf_counter()
+        candidate = self.plan(pose[:2])
+        elapsed = (time.perf_counter()-begin)*1000
+        self.plan_attempts.append({"t": float(t), "success": candidate is not None,
+                                   "time_ms": elapsed, "reason": "observed_route_blockage"})
+        if candidate is not None:
+            self.path = candidate
+            self.route_updates.append({"t": float(t), "reason": "observed_route_blockage",
+                                       "path": candidate.tolist()})
 
     def step(self, pose, velocity, points, t, dt):
         tick = time.perf_counter()
         if self.planning_failed:
             return 0., 0.
-        if self.method in ("astar", "rrt_star", "voronoi", "voronoi_qp"):
-            cmd = self.follow_path(pose, velocity, points, dt)
-            self.steps_ms.append((time.perf_counter()-tick)*1000)
-            return cmd
+        self.update_route(pose, points, t)
+        target = self.target(np.asarray(pose[:2]))
         if self.method == "apf":
-            cmd = self.limit_command(apf_command(pose, velocity, self.scene.goal, points, dt, self.cfg), velocity, dt)
-            self.steps_ms.append((time.perf_counter()-tick)*1000)
-            return cmd
-        velocities = self.tracker.update(points, self.scene.static, t)
-        cmd = self.dwa(pose, velocity, self.scene.goal, points, dt, velocities)
+            raw = apf_command(pose, velocity, target, points, dt, self.cfg)
+        elif self.method == "dwa":
+            raw = self.dwa(pose, velocity, target, points, dt)
+        else:
+            raw = self.follow_path(pose, target)
+        command = self.brake(pose, velocity, points, self.limit_command(raw, velocity, dt), dt)
         self.steps_ms.append((time.perf_counter()-tick)*1000)
-        return cmd
+        return command
 
     def limit_command(self, command, velocity, dt):
         c = self.cfg
@@ -136,76 +183,35 @@ class Navigator:
         scale = min(1., .5/max(wheel, 1e-9))
         return v*scale, w*scale
 
-    def follow_path(self, pose, velocity, points, dt):
-        """Common execution of a global path: heading control and emergency braking.
-
-        This follower never samples alternative motions or plans another route.
-        """
-        c = self.cfg
-        target = self.target(np.asarray(pose[:2]))
+    def follow_path(self, pose, target):
         delta = target-np.asarray(pose[:2])
         error = angle(math.atan2(delta[1], delta[0])-pose[2])
         remaining = np.linalg.norm(np.asarray(self.scene.goal)-pose[:2])
-        desired = c.max_speed*max(0., math.cos(error))*min(1., remaining/.8)
-        v, w = self.limit_command((desired, 2*error), velocity, dt)
-        # Stop along the commanded arc if the braking envelope meets a scan hit.
+        return self.cfg.max_speed*max(0., math.cos(error))*min(1., remaining/.8), 2*error
+
+    def brake(self, pose, velocity, points, command, dt):
+        c = self.cfg
+        v, w = command
         if len(points) and v > 0:
-            travel_time = dt+v/c.acceleration
-            times = np.linspace(0, travel_time, 12)
+            times = np.linspace(0, dt+v/c.acceleration, 12)
             headings = pose[2]+w*times/2
             positions = np.asarray(pose[:2])+v*times[:, None]*np.column_stack((np.cos(headings), np.sin(headings)))
-            distance = np.linalg.norm(positions[:, None, :]-points[None, :, :], axis=-1).min()
-            if distance < c.radius+c.margin:
+            clearance = np.linalg.norm(positions[:, None, :]-points[None, :, :], axis=-1).min(axis=1)
+            escaping = (clearance[0] < c.radius+c.margin
+                        and clearance.min() >= c.radius+.03
+                        and clearance.min() >= clearance[0]-.002
+                        and clearance[-1] > clearance[0]+.001)
+            if clearance.min() < c.radius+c.margin and not escaping:
                 v, _ = self.limit_command((0., w), velocity, dt)
         return v, w
 
-    def dwa(self, pose, velocity, target, points, dt, point_velocities=None):
-        c = self.cfg
-        x, y, theta = pose
-        v0, w0 = velocity
-        err = angle(math.atan2(target[1]-y, target[0]-x)-theta)
-        lo, hi = max(0, v0-c.acceleration*dt), min(c.max_speed, v0+c.acceleration*dt)
-        wl, wh = max(-c.max_omega, w0-c.angular_acceleration*dt), min(c.max_omega, w0+c.angular_acceleration*dt)
-        vv, ww = np.meshgrid(np.linspace(lo, hi, 7), np.linspace(wl, wh, 19))
-        v, w = vv.ravel(), ww.ravel()
-        # The same wheel motor limits used by Webots are enforced before rollout.
-        wheel = np.maximum(np.abs(v-.15*w), np.abs(v+.15*w))
-        scale = np.minimum(1, .5/np.maximum(wheel, 1e-9))
-        v, w = v*scale, w*scale
-        times = np.arange(c.prediction_dt, c.horizon+.001, c.prediction_dt)
-        headings = theta+w[:, None]*(times[None, :]-.5*c.prediction_dt)
-        xs = x+np.cumsum(v[:, None]*np.cos(headings)*c.prediction_dt, axis=1)
-        ys = y+np.cumsum(v[:, None]*np.sin(headings)*c.prediction_dt, axis=1)
-        min_dist = np.full(len(v), 5.)
-        if len(points):
-            nearby = np.linalg.norm(points-[x, y], axis=1) < 2.5
-            local = points[nearby]
-            if len(local):
-                dist = (xs[:, :, None]-local[:, 0])**2+(ys[:, :, None]-local[:, 1])**2
-                if point_velocities is not None:
-                    pv = point_velocities[nearby]
-                    predicted = local[None, :, :]+times[:, None, None]*pv[None, :, :]
-                    future_dist = ((xs[:, :, None]-predicted[None, :, :, 0])**2+
-                                   (ys[:, :, None]-predicted[None, :, :, 1])**2)
-                    dist = np.minimum(dist, future_dist)
-                min_dist = np.sqrt(dist.min(axis=(1, 2)))
-        valid = min_dist >= c.radius+c.margin
-        # A conservative braking-distance filter is shared by all variants.
-        valid &= min_dist-c.radius >= v*v/(2*c.acceleration)+.03
-        # A circular body can rotate without translating even inside the comfort
-        # margin. Keep the physical clearance requirement; translation still has
-        # to satisfy the full margin. Otherwise a stopped robot cannot turn away.
-        valid |= (v < 1e-9) & (min_dist >= c.radius+.03)
-        last_heading = theta+w*times[-1]
-        desired = np.arctan2(target[1]-ys[:, -1], target[0]-xs[:, -1])
-        heading_err = np.abs((desired-last_heading+np.pi) % (2*np.pi)-np.pi)
-        distance = np.hypot(target[0]-xs[:, -1], target[1]-ys[:, -1])
-        score = -1.7*distance-.6*heading_err+.5*v+.15*np.minimum(min_dist, 1.)-.04*np.abs(w-w0)
-        # Favor turning before translating when the new route lies behind the robot.
-        if abs(err)>1.0:
-            score -= 3*v
-        score[~valid] = -np.inf
-        if not np.any(valid):
-            return max(0., v0-c.acceleration*dt), 0.
-        k = int(np.argmax(score))
-        return float(v[k]), float(w[k])
+    def dwa(self, pose, velocity, target, points, dt):
+        return dwa_command(np.asarray(pose), velocity, target, points, dt, self.cfg)
+
+    def diagnostics(self):
+        return {"role": self.role, "guide_planner": self.guide_planner,
+                "replan_count": len(self.route_updates)-1,
+                "replan_attempt_count": len(self.plan_attempts),
+                "replan_attempts": self.plan_attempts,
+                "replan_time_ms": sum(p["time_ms"] for p in self.plan_attempts),
+                "route_updates": self.route_updates}

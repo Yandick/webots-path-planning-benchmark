@@ -28,4 +28,10 @@ def control_metrics(rows, dt):
     omega = np.asarray([p['omega'] for p in rows])
     moving = np.asarray([abs(p['v']) > .02 for p in rows])
     accel = np.diff(np.r_[0., omega])/dt
-    return {"moving_angular_accel_rms": float(np.sqrt(np.mean(accel[moving]**2))) if moving.any() else None}
+    stopped = (np.asarray([abs(p['v']) for p in rows]) < .005)&(np.abs(omega)<.05)
+    longest, current = 0, 0
+    for flag in stopped:
+        current = current+1 if flag else 0
+        longest = max(longest, current)
+    return {"moving_angular_accel_rms": float(np.sqrt(np.mean(accel[moving]**2))) if moving.any() else None,
+            "stationary_time_s": float(stopped.sum()*dt), "longest_pause_s": float(longest*dt)}

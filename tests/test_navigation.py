@@ -17,7 +17,8 @@ from navigation.metrics import resample_path, path_metrics
 from navigation.scenarios import SCENES, Scene, MovingDisc, make_scene, clearance, validate_scene
 from navigation.grid_map import GridMap, StaticObstacle
 from navigation.settings import resolve_method
-from navigation.tracking import ScanTracker
+from navigation.observation_map import ObservationMap
+from navigation.local import apf_command, collision_distance
 from navigation.simulation import scan, run
 from scripts.generate_worlds import world_text
 
@@ -44,6 +45,16 @@ class NavigationTests(unittest.TestCase):
         points = scan(scene, (0., 0., 0.), 0)
         self.assertAlmostEqual(float(np.linalg.norm(points, axis=1).min()), .2)
         self.assertLess(clearance(scene, np.array([.03, 0.]), 0), 0)
+
+    def test_collision_log_uses_the_actual_swept_substep_time(self):
+        scene = Scene("collision_clock", start=(0., 0.), goal=(4., 0.), duration=1.,
+                      moving=[MovingDisc("disc", .1, [[0., .3, 0.], [1., .31, 0.]])])
+        with patch.object(Navigator, "step", return_value=(.45, 0.)):
+            result = run(scene, "astar")
+        last = result["trajectory"][-1]
+        self.assertEqual(result["status"], "collision")
+        self.assertLess(last["t"], .1)
+        self.assertAlmostEqual(last["clearance"], clearance(scene, np.array([last['x'], last['y']]), last['t']))
 
     def test_static_astar_respects_robot_inflation(self):
         scene = make_scene()
@@ -99,12 +110,77 @@ class NavigationTests(unittest.TestCase):
         self.assertEqual(v, 0.)
         self.assertGreater(abs(w), 0.)
 
-    def test_lidar_velocity_estimate_uses_observed_surface_motion(self):
-        tracker = ScanTracker()
-        points = np.array([[0., -.1], [.05, 0.], [0., .1]])
-        for i in range(20):
-            velocity = tracker.update(points+[1.+.02*i, 0.], [], .1*i)
-        self.assertTrue(np.allclose(velocity, [.2, 0.], atol=.02))
+    def test_observed_occupancy_is_ray_cleared_and_expires(self):
+        layer = ObservationMap(Scene("observation"))
+        layer.update(np.zeros(2), np.array([[.7, 0.]]), 0.)
+        self.assertTrue(layer.blocks(np.array([[.7, 0.]])))
+        layer.update(np.zeros(2), np.array([[1.5, 0.]]), .1)
+        self.assertFalse(layer.blocks(np.array([[.7, 0.]])))
+        self.assertTrue(layer.blocks(np.array([[1.5, 0.]])))
+        layer.update(np.zeros(2), np.empty((0, 2)), 1.2)
+        self.assertFalse(layer.dynamic.any())
+
+    def test_local_controllers_pass_basic_obstacle_detour(self):
+        scene = Scene("basic", start=(-2., 0.), goal=(2., 0.), duration=35.,
+                      static=[StaticObstacle("cylinder", {"center": (0., .2), "radius": .35})])
+        for method in ("apf", "dwa"):
+            result = run(scene, method)
+            self.assertEqual(result["status"], "success", method)
+            self.assertGreater(result["min_surface_clearance"], 0.)
+
+    def test_apf_zero_force_does_not_command_forward_speed(self):
+        from scipy.optimize import brentq
+        nav = Navigator(make_scene(), "apf")
+        pose = np.array([0., 0., 0.])
+        gap = brentq(lambda d: .008*(1/d-2)/d**2-2., .1, .3)
+        hit = np.array([[gap+nav.cfg.radius, 0.]])
+        v, w = apf_command(pose, (0., 0.), (4., 0.), hit, .1, nav.cfg)
+        self.assertLess(abs(v)+abs(w), 1e-7)
+
+    def test_dwa_continuous_arc_collision_distance(self):
+        straight = collision_distance(np.zeros(3), np.array([.3]), np.array([0.]), np.array([[1., 0.]]), .28)
+        self.assertAlmostEqual(straight[0], .72)
+        turn = collision_distance(np.zeros(3), np.array([.3]), np.array([.3]), np.array([[1., 1.]]), .28)
+        self.assertAlmostEqual(turn[0], math.pi/2-2*math.asin(.14))
+
+    def test_dwa_can_move_away_inside_the_comfort_margin(self):
+        nav = Navigator(make_scene(), "dwa")
+        v, w = nav.dwa((0., 0., math.pi), (0., 0.), (-1., 0.), np.array([[.25, 0.]]), .1)
+        self.assertGreater(v, 0.)
+        self.assertLessEqual(abs(w), nav.cfg.angular_acceleration*.1+1e-9)
+
+    def test_global_planners_detour_before_long_blockage_ends(self):
+        for method in ("astar", "rrt_star"):
+            result = run(make_scene(), method)
+            self.assertEqual(result["status"], "success", method)
+            self.assertLess(result["finish_time"], 58.)
+            self.assertGreater(result["replan_count"], 0)
+
+    def test_controller_does_not_query_scripted_actor_states(self):
+        scene = make_scene()
+        nav = Navigator(scene, "astar")
+        with patch.object(scene.moving[0], "position", side_effect=AssertionError("Oracle query")):
+            nav.step(np.array([*scene.start, 0.]), (0., 0.), np.empty((0, 2)), 0., .1)
+
+    def test_inflation_escape_keeps_the_obstacle_occupied(self):
+        scene = Scene("escape", start=(.75, 0.), goal=(2., 0.), static=[StaticObstacle(
+            "box", {"center": (0., 0.), "size": (1., 1.)})])
+        nav = Navigator(scene, "astar")
+        self.assertTrue(nav.grid.is_occupied(*nav.grid.world_to_grid(*scene.start)))
+        self.assertFalse(nav.planning_failed)
+        self.assertTrue(nav.grid.is_line_collision_free(nav.path[0], nav.path[1], margin=.21))
+        self.assertTrue(nav.grid.is_occupied(*nav.grid.world_to_grid(0., 0.), use_inflation=False))
+        self.assertGreater(np.linalg.norm(nav.target(np.array(scene.start))-scene.start), .3)
+
+    def test_new_blockage_is_checked_before_the_next_planning_tick(self):
+        nav = Navigator(make_scene(), "astar")
+        pose = np.array([*nav.scene.start, 0.])
+        with patch.object(nav.observation, "blocks", side_effect=[False, True]), \
+             patch.object(nav, "plan", return_value=nav.path.copy()):
+            nav.update_route(pose, np.empty((0, 2)), 0.)
+            nav.update_route(pose, np.empty((0, 2)), .2)
+        self.assertEqual(len(nav.plan_attempts), 1)
+        self.assertAlmostEqual(nav.plan_attempts[0]["t"], .2)
 
     def test_algorithm_override_is_validated_by_both_adapters(self):
         self.assertEqual(resolve_method({"PLANNER_ALGO": "astar"}), "astar")
@@ -131,11 +207,14 @@ class NavigationTests(unittest.TestCase):
         grid.dist_map[:] = 2.
         self.assertTrue(grid.is_line_collision_free((.975, 1.025), (1., 1.)))
 
-    def test_local_baselines_use_goal_without_a_global_planner(self):
+    def test_local_baselines_use_the_same_astar_reference(self):
+        reference = Navigator(make_scene(), "astar").path
         for method in ("apf", "dwa"):
             scene = make_scene()
             nav = Navigator(scene, method)
-            self.assertTrue(np.array_equal(nav.path, [scene.start, scene.goal]))
+            self.assertTrue(np.array_equal(nav.path, reference))
+            self.assertEqual(nav.role, "local_controller")
+            self.assertEqual(nav.guide_planner, "astar")
 
     def test_sampling_planning_failure_is_recorded(self):
         with patch("navigation.core.rrt_star", return_value=None):

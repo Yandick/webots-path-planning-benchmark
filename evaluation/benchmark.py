@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from navigation.core import Config
 from navigation.scenarios import DEFAULT_SCENE, make_scene
-from navigation.settings import METHODS, METHOD_REFERENCES
+from navigation.settings import METHODS, METHOD_REFERENCES, EXPERIMENT_GROUPS, NAVIGATION_PROTOCOL
 from navigation.simulation import run
 
 
@@ -30,7 +30,7 @@ def main():
             filename = f"{DEFAULT_SCENE}_{method}_seed{seed}.json"
             archive[filename] = result
             rows.append({k: v for k, v in result.items() if k not in
-                         ("trajectory", "initial_path", "config")})
+                         ("trajectory", "initial_path", "config", "route_updates", "replan_attempts")})
             print(f"seed={seed} {method}: {result['status']} "
                   f"t={result['finish_time']:.1f}s", flush=True)
     with (out / "summary.csv").open("w", newline="", encoding="utf-8") as f:
@@ -41,6 +41,7 @@ def main():
                 "seeds": args.seeds, "methods": args.methods, "runs": list(archive),
                 "time_step_s": .10, "collision_check_step_s": .01,
                 "time_budget_s": make_scene().duration, "config": asdict(Config()),
+                "comparison_groups": EXPERIMENT_GROUPS, "navigation_protocol": NAVIGATION_PROTOCOL,
                 "method_references": {m: METHOD_REFERENCES[m] for m in args.methods if m in METHOD_REFERENCES}}
     (out / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
     with gzip.open(out / "raw_runs.json.gz", "wt", encoding="utf-8") as f:

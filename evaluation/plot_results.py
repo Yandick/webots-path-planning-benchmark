@@ -17,7 +17,7 @@ import numpy as np
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from navigation.scenarios import make_scene, static_distance
-from navigation.settings import METHODS, METHOD_LABELS
+from navigation.settings import METHODS, METHOD_LABELS, EXPERIMENT_GROUPS
 from navigation.classical import voronoi_route
 from navigation.metrics import resample_path
 from navigation.smoothing import safe_bubbles
@@ -70,36 +70,44 @@ def map_figure(scene, initial_path):
 
 
 def figures(rows, runs, scene):
-    fig, axes = plt.subplots(1, 3, figsize=(16, 5.5))
-    for j, method in enumerate(METHODS):
-        selected = [r for r in rows if r["algorithm"] == method]
-        times = [float(r["finish_time"]) if r["status"] == "success" else scene.duration for r in selected]
-        lengths = [float(r["actual_path_length"]) for r in selected if r["status"] == "success"]
-        success = sum(r["status"] == "success" for r in selected)
-        axes[0].bar(j, np.mean(times), yerr=np.std(times), color=COLORS[method], capsize=5)
-        if lengths:
-            axes[1].bar(j, np.mean(lengths), yerr=np.std(lengths), color=COLORS[method], capsize=5)
-        else:
-            axes[1].text(j, .2, "—", ha="center")
-        axes[2].bar(j, success/len(selected)*100, color=COLORS[method])
-        axes[2].text(j, success/len(selected)*100+2, f"{success}/{len(selected)}", ha="center")
-    for ax in axes:
-        ax.set_xticks(range(len(METHODS)), ["A*", "RRT*", "Voronoi", "APF", "DWA", "Safe QP"], fontsize=9)
-        ax.grid(axis="y", alpha=.2)
-        ax.set_axisbelow(True)
-    axes[0].set(title="Arrival time (mean +/- SD)", ylabel="Seconds; failures = 100 s")
-    axes[1].set(title="Travel length of successful trials", ylabel="Meters (mean +/- SD)")
-    axes[2].set(title="Collision-free success", ylabel="Percent", ylim=(0, 112))
-    fig.suptitle("Robot obstacle avoidance | five baselines + safe Voronoi smoothing | five seeds", fontsize=14)
-    fig.tight_layout(rect=(0, 0, 1, .93))
+    fig, axes = plt.subplots(2, 3, figsize=(16, 9))
+    groups = list(EXPERIMENT_GROUPS.values())
+    labels = [["A*", "RRT*", "Voronoi", "Safe QP"], ["Heading follower", "APF", "DWA"]]
+    titles = ["Global planners | same follower", "Local controllers | same A* guide"]
+    for row, methods in enumerate(groups):
+        for j, method in enumerate(methods):
+            selected = [r for r in rows if r["algorithm"] == method]
+            times = [float(r["finish_time"]) if r["status"] == "success" else scene.duration for r in selected]
+            lengths = [float(r["actual_path_length"]) for r in selected if r["status"] == "success"]
+            success = sum(r["status"] == "success" for r in selected)
+            axes[row, 0].bar(j, np.mean(times), yerr=np.std(times), color=COLORS[method], capsize=5)
+            if lengths:
+                axes[row, 1].bar(j, np.mean(lengths), yerr=np.std(lengths), color=COLORS[method], capsize=5)
+            else:
+                axes[row, 1].text(j, .2, "—", ha="center")
+            axes[row, 2].bar(j, success/len(selected)*100, color=COLORS[method])
+            axes[row, 2].text(j, success/len(selected)*100+2, f"{success}/{len(selected)}", ha="center")
+        for ax in axes[row]:
+            ax.set_xticks(range(len(methods)), labels[row], fontsize=9)
+            ax.grid(axis="y", alpha=.2)
+            ax.set_axisbelow(True)
+        axes[row, 0].set(title=titles[row]+"\nArrival time (mean +/- SD)", ylabel="Seconds; failures = 100 s")
+        axes[row, 1].set(title="Travel length of successful trials", ylabel="Meters (mean +/- SD)")
+        axes[row, 2].set(title="Collision-free success", ylabel="Percent", ylim=(0, 112))
+    fig.suptitle("One warehouse | online obstacle observations and replanning | five paired seeds", fontsize=14)
+    fig.tight_layout(rect=(0, 0, 1, .94))
     fig.savefig(OUT / "benchmark.png", dpi=180)
     plt.close(fig)
     fig, axes = plt.subplots(2, 3, figsize=(17, 13))
     for ax, run in zip(axes.flat, runs):
         draw(ax, scene)
         initial = np.asarray(run["initial_path"])
-        reference = "Goal direction" if run["algorithm"] in ("apf", "dwa") else "Initial path"
+        reference = "Common A* reference" if run["algorithm"] in ("apf", "dwa") else "Initial path"
         ax.plot(initial[:, 0], initial[:, 1], "--", c="#64748b", lw=1.2, label=reference)
+        for i, update in enumerate(run["route_updates"][1:]):
+            p = np.asarray(update["path"])
+            ax.plot(p[:, 0], p[:, 1], ":", c=COLORS[run["algorithm"]], lw=.9, alpha=.6,
+                    label="Replanned reference" if i==0 else None)
         tr = run["trajectory"]
         ax.plot([p["x"] for p in tr], [p["y"] for p in tr], c=COLORS[run["algorithm"]], lw=2.3, label="Executed")
         for i, o in enumerate(scene.moving):
@@ -151,11 +159,11 @@ def method_figure(runs, scene):
 def safety_figure(rows):
     fig, axes = plt.subplots(1, 3, figsize=(13, 4.7))
     metrics = [("min_surface_clearance", "Minimum actual\nsurface clearance", "Meters; higher is safer"),
-               ("planned_peak_curvature", "Peak planned curvature\n(0.10m samples)", "1/m; lower is smoother"),
+               ("planned_peak_curvature", "Peak initial planned curvature\n(0.10m samples)", "1/m; lower is smoother"),
                ("moving_angular_accel_rms", "Command angular acceleration RMS\nwhile moving", "rad/s²; lower is smoother")]
     for ax, (key, title, ylabel) in zip(axes, metrics):
         for i, method in enumerate(("voronoi", "voronoi_qp")):
-            values = [float(r[key]) for r in rows if r['algorithm']==method and r['success']=='True']
+            values = [float(r[key]) for r in rows if r['algorithm']==method]
             mean, sd = np.mean(values), np.std(values)
             ax.bar(i, mean, yerr=sd, capsize=5, color=COLORS[method], width=.6)
             ax.text(i, mean+sd+.03*mean, f"{mean:.3f}", ha="center", fontsize=11)
@@ -167,6 +175,36 @@ def safety_figure(rows):
     fig.suptitle("Safety and smoothness | same map, sensors and follower | five paired seeds", fontsize=13)
     fig.tight_layout(rect=(0, 0, 1, .90))
     fig.savefig(OUT / "safety_smoothness.png", dpi=180)
+    plt.close(fig)
+
+
+def failure_figure(archive):
+    failures = [r for r in archive.values() if r['status']=='collision']
+    output = OUT / "collision_case.png"
+    if not failures:
+        output.unlink(missing_ok=True)
+        return
+    run = failures[0]
+    scene = make_scene(seed=run['seed'])
+    tr = [p for p in run['trajectory'] if p['t'] >= run['finish_time']-4.]
+    fig, ax = plt.subplots(figsize=(9, 7))
+    draw(ax, scene)
+    ax.plot([p['x'] for p in tr], [p['y'] for p in tr], lw=2.2,
+            c=COLORS[run['algorithm']], label="Robot trajectory (last 4s)")
+    for k, actor in enumerate(scene.moving):
+        ax.plot([p['obstacles'][k][0] for p in tr], [p['obstacles'][k][1] for p in tr],
+                ':', c=CART_COLORS[k], label=actor.name)
+        end = tr[-1]['obstacles'][k]
+        ax.add_patch(Circle(end[:2], end[2], facecolor=CART_COLORS[k], alpha=.35))
+    end = tr[-1]
+    ax.add_patch(Circle((end['x'], end['y']), .18, facecolor=COLORS[run['algorithm']], alpha=.4))
+    ax.annotate(f"Robot at first contact\nt={end['t']:.2f}s", (end['x'], end['y']),
+                (-1.6, .65), arrowprops={"arrowstyle":"->"}, fontsize=11)
+    ax.set(xlim=(-1.8, 1.9), ylim=(-1.8, 1.3),
+           title=f"Recorded collision | {METHOD_LABELS[run['algorithm']]} | seed {run['seed']}")
+    ax.legend(loc="lower right", fontsize=9)
+    fig.tight_layout()
+    fig.savefig(output, dpi=180)
     plt.close(fig)
 
 
@@ -193,7 +231,7 @@ def video(runs, scene):
         label = ax.text(.02, .97, "", transform=ax.transAxes, va="top", fontsize=10)
         artists.append((trail, planned, body, carts, label))
     clock = fig.suptitle("", fontsize=20)
-    fig.text(.5, .025, "2D kinematic simulation | five baselines + safe Voronoi smoothing | identical cart schedules | 3x playback", ha="center", fontsize=12)
+    fig.text(.5, .025, "Online global planning + common follower | APF/DWA: common A* reference | 3x playback", ha="center", fontsize=12)
 
     def update(t):
         clock.set_text(f"Warehouse: t = {t:.1f} s")
@@ -206,9 +244,10 @@ def video(runs, scene):
                            float(np.interp(t, ts, [p["y"] for p in tr])))
             for cart, o in zip(carts, scene.moving):
                 cart.center = o.position(t)
-            p = np.asarray(run["initial_path"])
+            updates = [u for u in run["route_updates"] if u['t'] <= t]
+            p = np.asarray(updates[-1]['path'])
             planned.set_data(p[:, 0], p[:, 1])
-            label.set_text(run['status'] if t >= ts[-1] else "Navigating")
+            label.set_text(f"{run['status'] if t >= ts[-1] else 'Navigating'} | replans {len(updates)-1}")
         return []
 
     end = max(r["finish_time"] for r in runs)
@@ -232,6 +271,7 @@ def main():
     figures(rows, runs, scene)
     method_figure(runs, scene)
     safety_figure(rows)
+    failure_figure(archive)
     if args.video:
         video(runs, scene)
 
