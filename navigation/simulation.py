@@ -8,6 +8,7 @@ import numpy as np
 from .core import Navigator, angle
 from .scenarios import clearance, validate_scene
 from .settings import DEFAULT_METHOD
+from .metrics import path_metrics, control_metrics
 
 
 def scan(scene, pose, t, beams=180, max_range=5.):
@@ -76,7 +77,9 @@ def run(scene, method=DEFAULT_METHOD, dt=.10):
             status = "collision"; break
         if np.linalg.norm(pose[:2]-scene.goal) < .25:
             status = "success"; break
-    return {"backend": "kinematic_2d", "scene": scene.name, "seed": scene.seed,
+    return {**control_metrics(rows, dt),
+            **(path_metrics(nav.initial_path) if method not in ("apf", "dwa") else {"planned_peak_curvature": None}),
+            "backend": "kinematic_2d", "scene": scene.name, "seed": scene.seed,
             "scene_sha256": scene.signature(), "algorithm": method, "config": asdict(nav.cfg),
             "success": status=="success", "status": status, "finish_time": rows[-1]["t"],
             "actual_path_length": distance, "min_surface_clearance": min_gap,

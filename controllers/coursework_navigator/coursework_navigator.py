@@ -10,6 +10,7 @@ sys.path.insert(0, str(ROOT))
 import numpy as np
 from controller import Robot
 from navigation.core import Navigator, angle
+from navigation.metrics import path_metrics, control_metrics
 from navigation.scenarios import make_scene
 from navigation.settings import resolve_method
 
@@ -74,7 +75,9 @@ def main():
         if nav.planning_failed or truth_path.exists() or t >= scene.duration or np.linalg.norm(pose[:2]-scene.goal) <= .25:
             break
     left.setVelocity(0.); right.setVelocity(0.)
-    result = {"backend": "webots", "scene": scene.name, "seed": scene.seed,
+    result = {**control_metrics(rows, dt),
+              **(path_metrics(nav.initial_path) if method not in ("apf", "dwa") else {"planned_peak_curvature": None}),
+              "backend": "webots", "scene": scene.name, "seed": scene.seed,
               "scene_sha256": scene.signature(), "algorithm": method,
               "planning_failed": nav.planning_failed, "planning_time_ms": nav.planning_time_ms,
               "control_step_s": dt,

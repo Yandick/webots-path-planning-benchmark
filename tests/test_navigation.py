@@ -11,7 +11,9 @@ import numpy as np
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from navigation.core import Navigator, astar
-from navigation.classical import voronoi_path, voronoi_visibility_path
+from navigation.classical import voronoi_path
+from navigation.smoothing import voronoi_qp_path
+from navigation.metrics import resample_path, path_metrics
 from navigation.scenarios import SCENES, Scene, MovingDisc, make_scene, clearance, validate_scene
 from navigation.grid_map import GridMap, StaticObstacle
 from navigation.settings import resolve_method
@@ -52,19 +54,29 @@ class NavigationTests(unittest.TestCase):
 
     def test_global_path_follower_completes_static_map(self):
         scene = replace(make_scene(), moving=[])
-        a, b = run(scene, "astar"), run(scene, "voronoi_visibility")
+        a, b = run(scene, "astar"), run(scene, "voronoi_qp")
         self.assertEqual(a["status"], "success")
         self.assertEqual(b["status"], "success")
 
-    def test_vv_visibility_search_shortens_the_greedy_voronoi_route(self):
+    def test_safe_qp_reduces_curvature_and_keeps_clearance(self):
+        from navigation.scenarios import static_distance
         scene = make_scene()
         grid = scene.grid()
         baseline = voronoi_path(grid, scene.start, scene.goal)
-        vv = voronoi_visibility_path(grid, scene.start, scene.goal)
-        length = lambda p: np.linalg.norm(np.diff(p, axis=0), axis=1).sum()
-        self.assertLess(length(vv), length(baseline))
-        self.assertTrue(np.array_equal(vv[0], scene.start))
-        self.assertTrue(np.array_equal(vv[-1], scene.goal))
+        smooth = voronoi_qp_path(grid, scene.start, scene.goal)
+        self.assertLess(path_metrics(smooth)["planned_peak_curvature"], path_metrics(baseline)["planned_peak_curvature"])
+        baseline_gap = static_distance(resample_path(baseline, .01), scene.static).min()
+        smooth_gap = static_distance(resample_path(smooth, .01), scene.static).min()
+        self.assertGreater(smooth_gap, baseline_gap)
+        self.assertTrue(np.array_equal(smooth[0], scene.start))
+        self.assertTrue(np.allclose(smooth[-1], scene.goal))
+
+    def test_follower_lookahead_does_not_depend_on_waypoint_density(self):
+        nav = Navigator(make_scene(), "voronoi")
+        nav.path = np.array([[-4., -3.5], [-4., -2.]])
+        coarse = nav.target(np.array([-4., -3.5]))
+        nav.path = resample_path(nav.path, .02)
+        self.assertTrue(np.allclose(nav.target(np.array([-4., -3.5])), coarse))
 
     def test_one_map_has_turns_and_a_genuinely_blocked_short_route(self):
         scene = make_scene()
@@ -100,7 +112,7 @@ class NavigationTests(unittest.TestCase):
             resolve_method({"PLANNER_ALGO": "informed_rrt_star_dwa"})
 
     def test_classical_global_planners_return_collision_free_paths(self):
-        for method in ("astar", "rrt_star", "voronoi", "voronoi_visibility"):
+        for method in ("astar", "rrt_star", "voronoi", "voronoi_qp"):
             nav = Navigator(make_scene(), method)
             self.assertFalse(nav.planning_failed, method)
             self.assertTrue(all(nav.grid.is_line_collision_free(a, b, step=.02)

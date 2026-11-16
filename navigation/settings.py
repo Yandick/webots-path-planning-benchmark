@@ -9,19 +9,21 @@ METHOD_LABELS = {
     "voronoi": "Voronoi",
     "apf": "APF",
     "dwa": "DWA",
-    "voronoi_visibility": "Voronoi-Visibility (Niu et al.)",
+    "voronoi_qp": "Voronoi + safe QP smoothing",
 }
 METHODS = tuple(METHOD_LABELS)
 METHOD_REFERENCES = {
-    "voronoi_visibility": {
-        "authors": "Niu, Savvaris, Tsourdos, Ji",
-        "year": 2019,
-        "title": "Voronoi-Visibility Roadmap-based Path Planning Algorithm for Unmanned Surface Vehicles",
-        "doi": "10.1017/S0373463318001005",
-        "implementation": "navigation/classical.py:voronoi_visibility_path",
+    "voronoi_qp": {
+        "authors": "Wen, Zhang, Bi, Liu, Yuan, Fang",
+        "year": 2024,
+        "title": "G2VD Planner: Efficient Motion Planning With Grid-based Generalized Voronoi Diagrams",
+        "doi": "10.1109/TASE.2024.3398996",
+        "reproduced_component": "Section IV-D, safe-bubble QP smoothing, Equations (5)-(8)",
+        "adaptation": "geometric Voronoi reference; smoothness/reference weights 1000/1; shared inflated grid and follower",
+        "implementation": "navigation/smoothing.py:voronoi_qp_path",
     }
 }
-DEFAULT_METHOD = "voronoi_visibility"
+DEFAULT_METHOD = "voronoi_qp"
 ROOT = Path(__file__).resolve().parents[1]
 
 

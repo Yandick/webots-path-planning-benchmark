@@ -37,7 +37,7 @@ jobs:
           python3 -m pip install -r requirements.txt
       - name: Run five classical baselines and the improved method
         run: python3 evaluation/webots_benchmark.py --timeout 360
-      - name: Validate native geometry and VV path length
+      - name: Validate native geometry and safe smoothing
         run: python3 evaluation/check_webots_smoke.py
       - uses: actions/upload-artifact@v4
         if: always()

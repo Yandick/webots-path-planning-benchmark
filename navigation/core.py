@@ -1,4 +1,4 @@
-"""Classical baselines and Niu et al. (2019) Voronoi-Visibility planning.
+"""Classical baselines and safe-bubble QP smoothing of a Voronoi reference.
 
 The controller receives only pose, measured velocity and obstacle surface points.
 It does not query moving-obstacle schedules, true positions, radii or future states.
@@ -12,7 +12,9 @@ import numpy as np
 
 from .settings import DEFAULT_METHOD, METHODS
 from .tracking import ScanTracker
-from .classical import rrt_star, voronoi_path, voronoi_visibility_path, apf_command
+from .classical import rrt_star, voronoi_path, apf_command
+from .smoothing import voronoi_qp_path
+from .metrics import resample_path
 
 
 def angle(a):
@@ -83,8 +85,8 @@ class Navigator:
             self.path = rrt_star(self.grid, scene.start, scene.goal, seed=scene.seed)
         elif method == "voronoi":
             self.path = voronoi_path(self.grid, scene.start, scene.goal)
-        elif method == "voronoi_visibility":
-            self.path = voronoi_visibility_path(self.grid, scene.start, scene.goal)
+        elif method == "voronoi_qp":
+            self.path = voronoi_qp_path(self.grid, scene.start, scene.goal)
         elif method in ("apf", "dwa"):
             self.path = np.asarray([scene.start, scene.goal])
         else:
@@ -99,12 +101,7 @@ class Navigator:
 
     def target(self, position):
         # Densify by arc length, then pick a reachable forward reference point.
-        dense = []
-        for a, b in zip(self.path[:-1], self.path[1:]):
-            n = max(1, int(np.linalg.norm(b-a)/.08))
-            dense.extend(a+(b-a)*u for u in np.linspace(0, 1, n, endpoint=False))
-        dense.append(self.path[-1])
-        dense = np.asarray(dense)
+        dense = resample_path(self.path, .08)
         i = int(np.argmin(np.linalg.norm(dense-position, axis=1)))
         j = min(i+8, len(dense)-1)
         # Prevent lookahead from jumping through a static corner.
@@ -116,7 +113,7 @@ class Navigator:
         tick = time.perf_counter()
         if self.planning_failed:
             return 0., 0.
-        if self.method in ("astar", "rrt_star", "voronoi", "voronoi_visibility"):
+        if self.method in ("astar", "rrt_star", "voronoi", "voronoi_qp"):
             cmd = self.follow_path(pose, velocity, points, dt)
             self.steps_ms.append((time.perf_counter()-tick)*1000)
             return cmd

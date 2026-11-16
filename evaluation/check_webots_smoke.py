@@ -1,4 +1,4 @@
-"""Validate native sensor geometry, complete execution and the VV path-length property."""
+"""Validate native sensor geometry, complete execution and the safe-smoothed path."""
 import json
 import math
 from pathlib import Path
@@ -39,9 +39,10 @@ def main():
             print(f"{run['scene']} {run['algorithm']}: native nearest-point geometry error max={max(errors):.4f}m")
     indexed = {r["algorithm"]:r for r in runs}
     assert set(indexed) == set(METHODS), "Missing native method run"
-    proposed = indexed["voronoi_visibility"]
+    proposed = indexed["voronoi_qp"]
     assert proposed["status"] == "success", "Improved method did not reach the goal"
-    assert proposed["planned_path_length"] <= indexed["voronoi"]["planned_path_length"]+1e-8
+    assert proposed["planned_peak_curvature"] < indexed["voronoi"]["planned_peak_curvature"]
+    assert proposed["min_surface_clearance"] > indexed["voronoi"]["min_surface_clearance"]
     for method, run in indexed.items():
         print(f"Native warehouse {method}: {run['status']} at {run['finish_time']:.3f}s")
 

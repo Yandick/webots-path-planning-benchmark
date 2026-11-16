@@ -16,13 +16,15 @@ import numpy as np
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from navigation.scenarios import make_scene
+from navigation.scenarios import make_scene, static_distance
 from navigation.settings import METHODS, METHOD_LABELS
 from navigation.classical import voronoi_route
+from navigation.metrics import resample_path
+from navigation.smoothing import safe_bubbles
 
 OUT = ROOT / "results"
 COLORS = {"astar": "#7c3aed", "rrt_star": "#16a34a", "voronoi": "#0f766e",
-          "apf": "#dc2626", "dwa": "#d97706", "voronoi_visibility": "#0284c7"}
+          "apf": "#dc2626", "dwa": "#d97706", "voronoi_qp": "#0284c7"}
 CART_COLORS = ("#ef4444", "#f97316")
 plt.rcParams.update({"font.family": ["DejaVu Sans"], "font.size": 11,
                      "axes.spines.top": False, "axes.spines.right": False})
@@ -82,13 +84,13 @@ def figures(rows, runs, scene):
         axes[2].bar(j, success/len(selected)*100, color=COLORS[method])
         axes[2].text(j, success/len(selected)*100+2, f"{success}/{len(selected)}", ha="center")
     for ax in axes:
-        ax.set_xticks(range(len(METHODS)), ["A*", "RRT*", "Voronoi", "APF", "DWA", "VV"], fontsize=9)
+        ax.set_xticks(range(len(METHODS)), ["A*", "RRT*", "Voronoi", "APF", "DWA", "Safe QP"], fontsize=9)
         ax.grid(axis="y", alpha=.2)
         ax.set_axisbelow(True)
     axes[0].set(title="Arrival time (mean +/- SD)", ylabel="Seconds; failures = 100 s")
     axes[1].set(title="Travel length of successful trials", ylabel="Meters (mean +/- SD)")
     axes[2].set(title="Collision-free success", ylabel="Percent", ylim=(0, 112))
-    fig.suptitle("Robot obstacle avoidance | five baselines + published Voronoi-Visibility | five seeds", fontsize=14)
+    fig.suptitle("Robot obstacle avoidance | five baselines + safe Voronoi smoothing | five seeds", fontsize=14)
     fig.tight_layout(rect=(0, 0, 1, .93))
     fig.savefig(OUT / "benchmark.png", dpi=180)
     plt.close(fig)
@@ -114,27 +116,57 @@ def method_figure(runs, scene):
     chosen = {r["algorithm"]: r for r in runs}
     grid = scene.grid()
     raw = voronoi_route(grid, scene.start, scene.goal)
-    fig, axes = plt.subplots(1, 2, figsize=(13, 6.8))
+    fig, axes = plt.subplots(1, 2, figsize=(13, 7.1))
     for ax in axes:
         draw(ax, scene)
-        ax.plot(raw[:, 0], raw[:, 1], ":", c="#94a3b8", lw=1, label="Voronoi backbone")
-        for method in ("voronoi", "voronoi_visibility"):
-            r = chosen[method]
-            p = np.asarray(r["initial_path"])
-            ax.plot(p[:, 0], p[:, 1], "o-", markersize=3, lw=2, c=COLORS[method],
-                    label=f"{'Voronoi + greedy' if method=='voronoi' else 'VV'}: {r['planned_path_length']:.3f} m")
-    axes[0].set_title("Complete planned routes | same 0.32m inflation")
-    subset = raw[(raw[:, 0] < -2.0) & (raw[:, 1] > -2.1) & (raw[:, 1] < .5)][::4]
-    for i, a in enumerate(subset):
-        for b in subset[i+1:]:
-            if grid.is_line_collision_free(a, b):
-                axes[1].plot([a[0], b[0]], [a[1], b[1]], c="#64748b", alpha=.18, lw=.6, zorder=1)
-    axes[1].set(xlim=(-4.65, -2.0), ylim=(-2.2, .5), title="First turn | a sample of valid visibility edges")
-    axes[0].legend(loc="lower right", fontsize=8)
-    axes[1].legend(loc="upper right", fontsize=8)
-    fig.suptitle("Voronoi-Visibility reproduction: add safe line-of-sight edges, then search their total length", fontsize=12)
-    fig.tight_layout(rect=(0, 0, 1, .92))
-    fig.savefig(OUT / "voronoi_vs_vv.png", dpi=180)
+        ax.plot(raw[:, 0], raw[:, 1], ":", c="#94a3b8", lw=1, label="Safe Voronoi reference")
+        for method, label in (("voronoi", "Voronoi + greedy"), ("voronoi_qp", "Safe QP + cubic spline")):
+            p = np.asarray(chosen[method]["initial_path"])
+            ax.plot(p[:, 0], p[:, 1], lw=2.2, c=COLORS[method], label=label)
+    reference = resample_path(raw, .10)
+    lower, upper = safe_bubbles(grid, reference)
+    for k in range(0, len(reference), 4):
+        axes[1].add_patch(Rectangle(lower[k], *(upper[k]-lower[k]),
+                         facecolor="#a5b4fc", edgecolor="#6366f1", alpha=.18,
+                         label="QP safe bubbles (sample)" if k==0 else None))
+    for method in ("voronoi", "voronoi_qp"):
+        tr = chosen[method]['trajectory']
+        axes[1].plot([p['x'] for p in tr], [p['y'] for p in tr], '--',
+                     lw=1.2, c=COLORS[method], alpha=.8)
+        local = [p for p in tr if -4.85 < p['x'] < -2.7 and -2.7 < p['y'] < -.15]
+        closest = min(local, key=lambda p:static_distance(np.array([p['x'],p['y']]),scene.static))
+        axes[1].add_patch(Circle((closest['x'], closest['y']), .18,
+                         facecolor=COLORS[method], edgecolor=COLORS[method], alpha=.25))
+    axes[0].set_title("Planned routes | same 0.32m inflation")
+    axes[1].set(xlim=(-4.85, -2.7), ylim=(-2.7, -.15),
+                title="First turn | dashed: executed\nCircles: robot bodies at closest local shelf approach")
+    for ax in axes:
+        ax.legend(loc="lower right", fontsize=8)
+    fig.suptitle("Voronoi + safe QP smoothing | Wen et al. (2024), Section IV-D", fontsize=13)
+    fig.tight_layout(rect=(0, .02, 1, .92))
+    fig.savefig(OUT / "voronoi_smoothing.png", dpi=180)
+    plt.close(fig)
+
+
+def safety_figure(rows):
+    fig, axes = plt.subplots(1, 3, figsize=(13, 4.7))
+    metrics = [("min_surface_clearance", "Minimum actual\nsurface clearance", "Meters; higher is safer"),
+               ("planned_peak_curvature", "Peak planned curvature\n(0.10m samples)", "1/m; lower is smoother"),
+               ("moving_angular_accel_rms", "Command angular acceleration RMS\nwhile moving", "rad/s²; lower is smoother")]
+    for ax, (key, title, ylabel) in zip(axes, metrics):
+        for i, method in enumerate(("voronoi", "voronoi_qp")):
+            values = [float(r[key]) for r in rows if r['algorithm']==method and r['success']=='True']
+            mean, sd = np.mean(values), np.std(values)
+            ax.bar(i, mean, yerr=sd, capsize=5, color=COLORS[method], width=.6)
+            ax.text(i, mean+sd+.03*mean, f"{mean:.3f}", ha="center", fontsize=11)
+        ax.set_xticks([0, 1], ["Voronoi", "Safe QP"])
+        ax.set(title=title, ylabel=ylabel)
+        ax.margins(y=.20)
+        ax.grid(axis="y", alpha=.2)
+        ax.set_axisbelow(True)
+    fig.suptitle("Safety and smoothness | same map, sensors and follower | five paired seeds", fontsize=13)
+    fig.tight_layout(rect=(0, 0, 1, .90))
+    fig.savefig(OUT / "safety_smoothness.png", dpi=180)
     plt.close(fig)
 
 
@@ -161,7 +193,7 @@ def video(runs, scene):
         label = ax.text(.02, .97, "", transform=ax.transAxes, va="top", fontsize=10)
         artists.append((trail, planned, body, carts, label))
     clock = fig.suptitle("", fontsize=20)
-    fig.text(.5, .025, "2D kinematic simulation | five baselines + Voronoi-Visibility (Niu et al., 2019) | identical cart schedules | 3x playback", ha="center", fontsize=12)
+    fig.text(.5, .025, "2D kinematic simulation | five baselines + safe Voronoi smoothing | identical cart schedules | 3x playback", ha="center", fontsize=12)
 
     def update(t):
         clock.set_text(f"Warehouse: t = {t:.1f} s")
@@ -199,6 +231,7 @@ def main():
     map_figure(scene, runs[0]["initial_path"])
     figures(rows, runs, scene)
     method_figure(runs, scene)
+    safety_figure(rows)
     if args.video:
         video(runs, scene)
 

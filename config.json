@@ -1,4 +1,4 @@
 {
-  "algorithm": "voronoi_visibility",
-  "description": "Niu et al. (2019) Voronoi-Visibility roadmap reproduction. DOI: 10.1017/S0373463318001005. PLANNER_ALGO overrides this default."
+  "algorithm": "voronoi_qp",
+  "description": "Voronoi reference with Wen et al. safe-bubble QP smoothing, DOI 10.1109/TASE.2024.3398996"
 }
