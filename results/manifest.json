@@ -78,11 +78,11 @@
   "navigation_protocol": {
     "dynamic_map": "static occupancy + observed hit marking, free-ray clearing and 1s expiry",
     "dynamic_map_source": "https://docs.nav2.org/jazzy/configuration_and_development/configuration_guide/core_servers/costmap_2d/costmap_plugins/obstacle/",
-    "replan": "check every control step; observed blockage triggers replanning with a 1s minimum interval between attempts",
+    "replan": "check remaining route and robot-to-route connection every control step; observed blockage triggers replanning with a 1s minimum interval between attempts",
     "local_controller_guide": "A* with the same dynamic observation layer and replan trigger",
     "shared_safety": "same speed, wheel, acceleration limits and scan-based braking",
     "inflation_escape": "checked connection and increasing-clearance motion at radius+0.03m; occupied cells are retained",
-    "development": "basic and warehouse seed0 checks; reported runs use the same fixed configuration across seeds0..4"
+    "development": "basic and warehouse diagnostic cases; reported runs use the same fixed configuration across seeds0..4"
   },
   "method_references": {
     "astar": {
@@ -142,5 +142,7 @@
       "adaptation": "geometric Voronoi reference; smoothness/reference weights 1000/1; shared inflated grid and follower",
       "implementation": "navigation/smoothing.py:voronoi_qp_path"
     }
-  }
+  },
+  "source_commit": "34760744112cbde16f2dd7c107b9b3ed3523a877",
+  "raw_runs_sha256": "07d137aa6555216f63a98608db90751d26a18fb0bd4c87c09410f2d88e684d91"
 }
