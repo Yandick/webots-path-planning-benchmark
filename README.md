@@ -70,7 +70,20 @@ python evaluation/check_webots_smoke.py
 
 可用 `WEBOTS_BINARY` 指定原生可执行文件。无显示 Linux 需要 xvfb-run，必须保留渲染以获得真实激光观测。四个 90° 原生雷达扇区组成 360° 扫描，接口依据 [Webots 官方 Lidar 文档](https://github.com/cyberbotics/webots/blob/R2025a/docs/reference/lidar.md)。设置 `RECORD_VIDEO=1` 可录制原生视频；每次运行也会导出场景截图。fast 模式截图可能滞后于仿真时刻，精确运动以同步日志为准。
 
-原生仿真由 GitHub Actions 执行，二维结果与原生结果分别记录。
+原生仿真已完成。[CI 记录](https://github.com/Yandick/webots-path-planning-benchmark/actions/runs/43806946635) · [结果摘要](results/webots_validation.json) · [六次完整轨迹](results/webots_raw_runs.json.gz)
+
+| 方法 | Webots seed 0 |
+| --- | --- |
+| A* | 74.688 s 到达 |
+| RRT* | 74.528 s 到达 |
+| Voronoi | 29.280 s 到达 |
+| APF | 100 s 超时 |
+| DWA | 100 s 超时 |
+| 事件触发改进 | 38.208 s 到达，重规划 2 次 |
+
+六次原生运行均无几何碰撞。15 项回归检查、六种方法的原生执行和激光点几何核对全部通过。
+
+![Webots 原生场景](results/webots_scene.png)
 
 ## 文件依赖
 
