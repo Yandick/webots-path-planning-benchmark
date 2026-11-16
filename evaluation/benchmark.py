@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from navigation.core import Config
 from navigation.scenarios import DEFAULT_SCENE, make_scene
-from navigation.settings import METHODS
+from navigation.settings import METHODS, METHOD_REFERENCES
 from navigation.simulation import run
 
 
@@ -30,9 +30,9 @@ def main():
             filename = f"{DEFAULT_SCENE}_{method}_seed{seed}.json"
             archive[filename] = result
             rows.append({k: v for k, v in result.items() if k not in
-                         ("trajectory", "path_history", "initial_path", "config")})
+                         ("trajectory", "initial_path", "config")})
             print(f"seed={seed} {method}: {result['status']} "
-                  f"t={result['finish_time']:.1f}s replans={result['replans']}", flush=True)
+                  f"t={result['finish_time']:.1f}s", flush=True)
     with (out / "summary.csv").open("w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=list(rows[0]))
         writer.writeheader()
@@ -40,7 +40,8 @@ def main():
     manifest = {"backend": "kinematic_2d", "scene": DEFAULT_SCENE,
                 "seeds": args.seeds, "methods": args.methods, "runs": list(archive),
                 "time_step_s": .10, "collision_check_step_s": .01,
-                "time_budget_s": make_scene().duration, "config": asdict(Config())}
+                "time_budget_s": make_scene().duration, "config": asdict(Config()),
+                "method_references": {m: METHOD_REFERENCES[m] for m in args.methods if m in METHOD_REFERENCES}}
     (out / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
     with gzip.open(out / "raw_runs.json.gz", "wt", encoding="utf-8") as f:
         json.dump(archive, f, separators=(",", ":"))

@@ -2,7 +2,9 @@
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/scripts/setup_webots_env.sh"
-export PLANNER_ALGO="${PLANNER_ALGO:-${1:-replan_dwa}}"
+if [ "$#" -ge 1 ]; then
+  export PLANNER_ALGO="$1"
+fi
 export BENCHMARK_MODE=0
 if [ -z "${DISPLAY:-}" ]; then
   exec bash "$SCRIPT_DIR/scripts/webots_headless.sh" "$SCRIPT_DIR/worlds/warehouse.wbt"

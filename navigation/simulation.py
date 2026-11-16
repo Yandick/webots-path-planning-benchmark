@@ -7,6 +7,7 @@ import numpy as np
 
 from .core import Navigator, angle
 from .scenarios import clearance, validate_scene
+from .settings import DEFAULT_METHOD
 
 
 def scan(scene, pose, t, beams=180, max_range=5.):
@@ -34,7 +35,7 @@ def scan(scene, pose, t, beams=180, max_range=5.):
     return origin+directions[hit]*ranges[hit, None]
 
 
-def run(scene, method="replan_dwa", dt=.10):
+def run(scene, method=DEFAULT_METHOD, dt=.10):
     validate_scene(scene)
     nav = Navigator(scene, method)
     pose = np.array([*scene.start, math.atan2(scene.goal[1]-scene.start[1], scene.goal[0]-scene.start[0])])
@@ -79,11 +80,12 @@ def run(scene, method="replan_dwa", dt=.10):
             "scene_sha256": scene.signature(), "algorithm": method, "config": asdict(nav.cfg),
             "success": status=="success", "status": status, "finish_time": rows[-1]["t"],
             "actual_path_length": distance, "min_surface_clearance": min_gap,
-            "collision_count": int(collision), "replans": nav.replans,
+            "collision_count": int(collision),
             "planning_time_ms": nav.planning_time_ms,
-            "replan_attempts": nav.replan_attempts, "replan_time_ms": nav.replan_ms,
             "control_mean_ms": float(np.mean(nav.steps_ms)) if nav.steps_ms else 0.,
             "control_p95_ms": float(np.percentile(nav.steps_ms, 95)) if nav.steps_ms else 0.,
             "wall_time_s": time.perf_counter()-started,
-            "initial_path": nav.initial_path.tolist(), "path_history": nav.path_history,
+            "initial_path": nav.initial_path.tolist(),
+            "planned_path_length": (float(np.linalg.norm(np.diff(nav.initial_path, axis=0), axis=1).sum())
+                                    if method not in ("apf", "dwa") else None),
             "trajectory": rows}

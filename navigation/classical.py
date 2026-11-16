@@ -76,7 +76,7 @@ def rrt_star(grid, start, goal, seed=0, iterations=1800):
     return shortcut(grid, path)
 
 
-def voronoi_path(grid, start, goal):
+def voronoi_route(grid, start, goal):
     boundary = []
     for obs in grid.obstacles:
         cx, cy = obs.params["center"]
@@ -117,7 +117,48 @@ def voronoi_path(grid, start, goal):
             while node != -1:
                 node = parents[node]
                 path.append(positions[node])
-            return shortcut(grid, path[::-1])
+            return np.asarray(path[::-1])
+        if cost > costs[node]:
+            continue
+        for other, distance in graph[node]:
+            new_cost = cost+distance
+            if new_cost < costs.get(other, math.inf):
+                costs[other], parents[other] = new_cost, node
+                heapq.heappush(queue, (new_cost, other))
+    return None
+
+
+def voronoi_path(grid, start, goal):
+    path = voronoi_route(grid, start, goal)
+    return None if path is None else shortcut(grid, path)
+
+
+def voronoi_visibility_path(grid, start, goal):
+    """Niu et al. (2019), Sections 4.5-4.6: visibility graph on Voronoi path.
+
+    DOI: 10.1017/S0373463318001005. A Python reproduction using the shared
+    inflated robot configuration-space grid for every visibility test.
+    """
+    route = voronoi_route(grid, start, goal)
+    if route is None:
+        return None
+    graph = [[] for _ in route]
+    for i in range(len(route)):
+        for j in range(i+1, len(route)):
+            if grid.is_line_collision_free(route[i], route[j]):
+                distance = float(np.linalg.norm(route[j]-route[i]))
+                graph[i].append((j, distance))
+                graph[j].append((i, distance))
+    target = len(route)-1
+    queue, costs, parents = [(0., 0)], {0: 0.}, {}
+    while queue:
+        cost, node = heapq.heappop(queue)
+        if node == target:
+            path = [route[node]]
+            while node != 0:
+                node = parents[node]
+                path.append(route[node])
+            return np.asarray(path[::-1])
         if cost > costs[node]:
             continue
         for other, distance in graph[node]:

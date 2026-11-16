@@ -1,9 +1,8 @@
-"""Classical navigation baselines and sensor-triggered global replanning.
+"""Classical baselines and Niu et al. (2019) Voronoi-Visibility planning.
 
 The controller receives only pose, measured velocity and obstacle surface points.
 It does not query moving-obstacle schedules, true positions, radii or future states.
 """
-from collections import deque
 from dataclasses import dataclass
 import heapq
 import math
@@ -11,10 +10,9 @@ import time
 
 import numpy as np
 
-from .scenarios import static_distance
 from .settings import DEFAULT_METHOD, METHODS
 from .tracking import ScanTracker
-from .classical import rrt_star, voronoi_path, apf_command
+from .classical import rrt_star, voronoi_path, voronoi_visibility_path, apf_command
 
 
 def angle(a):
@@ -23,36 +21,7 @@ def angle(a):
 
 def astar(grid, start, goal):
     source, target = grid.world_to_grid(*start), grid.world_to_grid(*goal)
-    if grid.is_occupied(*target):
-        return None
-    if grid.is_occupied(*source):
-        # A safe stopped robot may already be inside a newly inflated obstacle band.
-        # Find a short, geometrically checked exit; never erase occupied cells.
-        escape_margin = grid.robot_radius+.01
-        if not grid.is_collision_free_point(*start, margin=escape_margin):
-            return None
-        queue, parents = deque([source]), {source: None}
-        while queue:
-            node = queue.popleft()
-            position = start if node==source else grid.grid_to_world(*node)
-            if not grid.is_occupied(*node):
-                tail = astar(grid, position, goal)
-                if tail is not None:
-                    prefix, cur = [], node
-                    while cur is not None:
-                        prefix.append(tuple(start) if cur==source else grid.grid_to_world(*cur))
-                        cur = parents[cur]
-                    prefix.reverse()
-                    return np.vstack((np.asarray(prefix[:-1]), tail)) if len(prefix)>1 else tail
-            for dx, dy in ((1,0),(-1,0),(0,1),(0,-1),(1,1),(1,-1),(-1,1),(-1,-1)):
-                nxt = node[0]+dx, node[1]+dy
-                if nxt in parents or not grid.is_in_bounds(*nxt):
-                    continue
-                dest = grid.grid_to_world(*nxt)
-                if np.linalg.norm(np.asarray(dest)-start)>.8:
-                    continue
-                if grid.is_line_collision_free(position, dest, step=.02, margin=escape_margin):
-                    parents[nxt] = node; queue.append(nxt)
+    if grid.is_occupied(*source) or grid.is_occupied(*target):
         return None
     queue = [(0., source)]
     cost, parent, closed = {source: 0.}, {}, set()
@@ -100,11 +69,6 @@ class Config:
     margin: float = .10
     horizon: float = 1.5
     prediction_dt: float = .15
-    blocked_seconds: float = 2.5
-    replan_cooldown: float = 4.0
-    memory_seconds: float = 4.0
-    route_blocked_seconds: float = .8
-    route_lookahead: float = 1.8
 
 
 class Navigator:
@@ -119,6 +83,8 @@ class Navigator:
             self.path = rrt_star(self.grid, scene.start, scene.goal, seed=scene.seed)
         elif method == "voronoi":
             self.path = voronoi_path(self.grid, scene.start, scene.goal)
+        elif method == "voronoi_visibility":
+            self.path = voronoi_visibility_path(self.grid, scene.start, scene.goal)
         elif method in ("apf", "dwa"):
             self.path = np.asarray([scene.start, scene.goal])
         else:
@@ -128,35 +94,8 @@ class Navigator:
         if self.planning_failed:
             self.path = np.asarray([scene.start])
         self.initial_path = self.path.copy()
-        self.path_history = []
-        self.positions = deque()
-        self.memory = {}
-        self.last_replan = -math.inf
-        self.replans = 0
-        self.replan_attempts = 0
-        self.replan_ms = 0.
         self.steps_ms = []
         self.tracker = ScanTracker()
-        self.route_blocked_since = None
-
-    def route_obstructed(self, position, points):
-        if not len(points):
-            return False
-        unknown = points[static_distance(points, self.scene.static) > .12]
-        if not len(unknown):
-            return False
-        dense = []
-        for a, b in zip(self.path[:-1], self.path[1:]):
-            n = max(1, int(np.linalg.norm(b-a)/.08))
-            dense.extend(a+(b-a)*u for u in np.linspace(0, 1, n, endpoint=False))
-        dense.append(self.path[-1])
-        dense = np.asarray(dense)
-        i = int(np.argmin(np.linalg.norm(dense-position, axis=1)))
-        ahead = dense[i:]
-        length = np.r_[0., np.cumsum(np.linalg.norm(np.diff(ahead, axis=0), axis=1))]
-        ahead = ahead[length <= self.cfg.route_lookahead]
-        distance = np.linalg.norm(ahead[:, None, :]-unknown[None, :, :], axis=-1)
-        return bool(np.any(distance < self.cfg.radius+self.cfg.margin+.04))
 
     def target(self, position):
         # Densify by arc length, then pick a reachable forward reference point.
@@ -173,20 +112,11 @@ class Navigator:
             j -= 1
         return dense[j]
 
-    def update_map(self, points, t):
-        if len(points):
-            unknown = points[static_distance(points, self.scene.static) > .12]
-            for p in unknown:
-                key = tuple(np.round(p/.15).astype(int))
-                self.memory[key] = (p, t)
-        self.memory = {key: val for key, val in self.memory.items()
-                       if t-val[1] <= self.cfg.memory_seconds}
-
     def step(self, pose, velocity, points, t, dt):
         tick = time.perf_counter()
         if self.planning_failed:
             return 0., 0.
-        if self.method in ("astar", "rrt_star", "voronoi"):
+        if self.method in ("astar", "rrt_star", "voronoi", "voronoi_visibility"):
             cmd = self.follow_path(pose, velocity, points, dt)
             self.steps_ms.append((time.perf_counter()-tick)*1000)
             return cmd
@@ -194,41 +124,8 @@ class Navigator:
             cmd = self.limit_command(apf_command(pose, velocity, self.scene.goal, points, dt, self.cfg), velocity, dt)
             self.steps_ms.append((time.perf_counter()-tick)*1000)
             return cmd
-        p = np.asarray(pose[:2])
         velocities = self.tracker.update(points, self.scene.static, t)
-        if self.method == "dwa":
-            cmd = self.dwa(pose, velocity, self.scene.goal, points, dt, velocities)
-            self.steps_ms.append((time.perf_counter()-tick)*1000)
-            return cmd
-        self.update_map(points, t)
-        if self.route_obstructed(p, points):
-            if self.route_blocked_since is None:
-                self.route_blocked_since = t
-        else:
-            self.route_blocked_since = None
-        blocked_route = (self.route_blocked_since is not None and
-                         t-self.route_blocked_since >= self.cfg.route_blocked_seconds)
-        self.positions.append((t, p.copy()))
-        while self.positions and t-self.positions[0][0] > self.cfg.blocked_seconds+.05:
-            self.positions.popleft()
-        stalled = (len(self.positions)>1 and t-self.positions[0][0] >= self.cfg.blocked_seconds-.05
-                   and np.linalg.norm(p-self.positions[0][1]) < .18)
-        request = self.method == "replan_dwa" and (blocked_route or stalled)
-        if request and t-self.last_replan >= self.cfg.replan_cooldown and self.memory:
-            self.last_replan = t
-            self.replan_attempts += 1
-            begin = time.perf_counter()
-            grid = self.scene.grid([v[0] for v in self.memory.values()])
-            new_path = astar(grid, p, self.scene.goal)
-            self.replan_ms += (time.perf_counter()-begin)*1000
-            if new_path is not None:
-                self.path = new_path
-                self.grid = grid
-                self.replans += 1
-                self.path_history.append({"t": t, "path": new_path.tolist()})
-                self.positions.clear()
-                self.route_blocked_since = None
-        cmd = self.dwa(pose, velocity, self.target(p), points, dt, velocities)
+        cmd = self.dwa(pose, velocity, self.scene.goal, points, dt, velocities)
         self.steps_ms.append((time.perf_counter()-tick)*1000)
         return cmd
 

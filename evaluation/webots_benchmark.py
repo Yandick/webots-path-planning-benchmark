@@ -56,8 +56,7 @@ def main():
                 for result in (navigator, truth):
                     if result["algorithm"]!=method or result["scene_sha256"]!=scene.signature():
                         raise RuntimeError("Controller algorithm/scene mismatch")
-                result = {**navigator, **truth, "path_history": navigator["path_history"],
-                          "replans": navigator["replans"], "control_trajectory": navigator["trajectory"]}
+                result = {**navigator, **truth, "control_trajectory": navigator["trajectory"]}
                 path = out / f"{tag}.json"
                 path.write_text(json.dumps(result, indent=2), encoding="utf-8")
                 manifest["runs"].append(path.name)

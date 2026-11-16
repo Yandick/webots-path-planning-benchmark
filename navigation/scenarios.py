@@ -31,13 +31,9 @@ class Scene:
     duration: float = 100.0
     seed: int = 0
 
-    def grid(self, extra_points=None):
-        obs = list(self.static)
-        if extra_points is not None:
-            obs += [StaticObstacle("cylinder", {"center": tuple(p), "radius": 0.07})
-                    for p in extra_points]
+    def grid(self):
         return GridMap(resolution=0.10, robot_radius=0.18,
-                       safety_margin=0.14, obstacles=obs)
+                       safety_margin=0.14, obstacles=self.static)
 
     def signature(self):
         data = {"name": self.name, "seed": self.seed, "start": self.start,

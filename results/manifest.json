@@ -14,7 +14,7 @@
     "voronoi",
     "apf",
     "dwa",
-    "replan_dwa"
+    "voronoi_visibility"
   ],
   "runs": [
     "warehouse_astar_seed0.json",
@@ -22,31 +22,31 @@
     "warehouse_voronoi_seed0.json",
     "warehouse_apf_seed0.json",
     "warehouse_dwa_seed0.json",
-    "warehouse_replan_dwa_seed0.json",
+    "warehouse_voronoi_visibility_seed0.json",
     "warehouse_astar_seed1.json",
     "warehouse_rrt_star_seed1.json",
     "warehouse_voronoi_seed1.json",
     "warehouse_apf_seed1.json",
     "warehouse_dwa_seed1.json",
-    "warehouse_replan_dwa_seed1.json",
+    "warehouse_voronoi_visibility_seed1.json",
     "warehouse_astar_seed2.json",
     "warehouse_rrt_star_seed2.json",
     "warehouse_voronoi_seed2.json",
     "warehouse_apf_seed2.json",
     "warehouse_dwa_seed2.json",
-    "warehouse_replan_dwa_seed2.json",
+    "warehouse_voronoi_visibility_seed2.json",
     "warehouse_astar_seed3.json",
     "warehouse_rrt_star_seed3.json",
     "warehouse_voronoi_seed3.json",
     "warehouse_apf_seed3.json",
     "warehouse_dwa_seed3.json",
-    "warehouse_replan_dwa_seed3.json",
+    "warehouse_voronoi_visibility_seed3.json",
     "warehouse_astar_seed4.json",
     "warehouse_rrt_star_seed4.json",
     "warehouse_voronoi_seed4.json",
     "warehouse_apf_seed4.json",
     "warehouse_dwa_seed4.json",
-    "warehouse_replan_dwa_seed4.json"
+    "warehouse_voronoi_visibility_seed4.json"
   ],
   "time_step_s": 0.1,
   "collision_check_step_s": 0.01,
@@ -59,11 +59,15 @@
     "radius": 0.18,
     "margin": 0.1,
     "horizon": 1.5,
-    "prediction_dt": 0.15,
-    "blocked_seconds": 2.5,
-    "replan_cooldown": 4.0,
-    "memory_seconds": 4.0,
-    "route_blocked_seconds": 0.8,
-    "route_lookahead": 1.8
+    "prediction_dt": 0.15
+  },
+  "method_references": {
+    "voronoi_visibility": {
+      "authors": "Niu, Savvaris, Tsourdos, Ji",
+      "year": 2019,
+      "title": "Voronoi-Visibility Roadmap-based Path Planning Algorithm for Unmanned Surface Vehicles",
+      "doi": "10.1017/S0373463318001005",
+      "implementation": "navigation/classical.py:voronoi_visibility_path"
+    }
   }
 }

@@ -18,10 +18,11 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from navigation.scenarios import make_scene
 from navigation.settings import METHODS, METHOD_LABELS
+from navigation.classical import voronoi_route
 
 OUT = ROOT / "results"
 COLORS = {"astar": "#7c3aed", "rrt_star": "#16a34a", "voronoi": "#0f766e",
-          "apf": "#dc2626", "dwa": "#d97706", "replan_dwa": "#0284c7"}
+          "apf": "#dc2626", "dwa": "#d97706", "voronoi_visibility": "#0284c7"}
 CART_COLORS = ("#ef4444", "#f97316")
 plt.rcParams.update({"font.family": ["DejaVu Sans"], "font.size": 11,
                      "axes.spines.top": False, "axes.spines.right": False})
@@ -71,20 +72,23 @@ def figures(rows, runs, scene):
     for j, method in enumerate(METHODS):
         selected = [r for r in rows if r["algorithm"] == method]
         times = [float(r["finish_time"]) if r["status"] == "success" else scene.duration for r in selected]
-        replans = [int(r["replans"]) for r in selected]
+        lengths = [float(r["actual_path_length"]) for r in selected if r["status"] == "success"]
         success = sum(r["status"] == "success" for r in selected)
         axes[0].bar(j, np.mean(times), yerr=np.std(times), color=COLORS[method], capsize=5)
-        axes[1].bar(j, np.mean(replans), yerr=np.std(replans), color=COLORS[method], capsize=5)
+        if lengths:
+            axes[1].bar(j, np.mean(lengths), yerr=np.std(lengths), color=COLORS[method], capsize=5)
+        else:
+            axes[1].text(j, .2, "—", ha="center")
         axes[2].bar(j, success/len(selected)*100, color=COLORS[method])
         axes[2].text(j, success/len(selected)*100+2, f"{success}/{len(selected)}", ha="center")
     for ax in axes:
-        ax.set_xticks(range(len(METHODS)), ["A*", "RRT*", "Voronoi", "APF", "DWA", "Event"], fontsize=9)
+        ax.set_xticks(range(len(METHODS)), ["A*", "RRT*", "Voronoi", "APF", "DWA", "VV"], fontsize=9)
         ax.grid(axis="y", alpha=.2)
         ax.set_axisbelow(True)
     axes[0].set(title="Arrival time (mean +/- SD)", ylabel="Seconds; failures = 100 s")
-    axes[1].set(title="Accepted replans (mean +/- SD)", ylabel="Count per trial")
+    axes[1].set(title="Travel length of successful trials", ylabel="Meters (mean +/- SD)")
     axes[2].set(title="Collision-free success", ylabel="Percent", ylim=(0, 112))
-    fig.suptitle("Robot obstacle avoidance | five classical baselines and the improved method | five seeds", fontsize=14)
+    fig.suptitle("Robot obstacle avoidance | five baselines + published Voronoi-Visibility | five seeds", fontsize=14)
     fig.tight_layout(rect=(0, 0, 1, .93))
     fig.savefig(OUT / "benchmark.png", dpi=180)
     plt.close(fig)
@@ -94,19 +98,43 @@ def figures(rows, runs, scene):
         initial = np.asarray(run["initial_path"])
         reference = "Goal direction" if run["algorithm"] in ("apf", "dwa") else "Initial path"
         ax.plot(initial[:, 0], initial[:, 1], "--", c="#64748b", lw=1.2, label=reference)
-        for i, h in enumerate(run["path_history"]):
-            p = np.asarray(h["path"])
-            ax.plot(p[:, 0], p[:, 1], "--", c=COLORS[run["algorithm"]], alpha=.45,
-                    label="Replanned paths" if i == 0 else None)
         tr = run["trajectory"]
         ax.plot([p["x"] for p in tr], [p["y"] for p in tr], c=COLORS[run["algorithm"]], lw=2.3, label="Executed")
         for i, o in enumerate(scene.moving):
             ax.add_patch(Circle(o.position(30), o.radius, color=CART_COLORS[i], alpha=.7))
-        ax.set_title(f"{METHOD_LABELS[run['algorithm']]}\n{run['status']}: {run['finish_time']:.1f}s; replans={run['replans']}")
+        ax.set_title(f"{METHOD_LABELS[run['algorithm']]}\n{run['status']}: {run['finish_time']:.1f}s")
         ax.legend(loc="lower right", fontsize=8)
     fig.suptitle("Seed 0 | 2D kinematic simulation\nCart snapshots at t=30s; trajectories cover the full run", fontsize=14)
     fig.subplots_adjust(left=.05, right=.99, bottom=.06, top=.90, wspace=.20, hspace=.40)
     fig.savefig(OUT / "warehouse.png", dpi=180)
+    plt.close(fig)
+
+
+def method_figure(runs, scene):
+    chosen = {r["algorithm"]: r for r in runs}
+    grid = scene.grid()
+    raw = voronoi_route(grid, scene.start, scene.goal)
+    fig, axes = plt.subplots(1, 2, figsize=(13, 6.8))
+    for ax in axes:
+        draw(ax, scene)
+        ax.plot(raw[:, 0], raw[:, 1], ":", c="#94a3b8", lw=1, label="Voronoi backbone")
+        for method in ("voronoi", "voronoi_visibility"):
+            r = chosen[method]
+            p = np.asarray(r["initial_path"])
+            ax.plot(p[:, 0], p[:, 1], "o-", markersize=3, lw=2, c=COLORS[method],
+                    label=f"{'Voronoi + greedy' if method=='voronoi' else 'VV'}: {r['planned_path_length']:.3f} m")
+    axes[0].set_title("Complete planned routes | same 0.32m inflation")
+    subset = raw[(raw[:, 0] < -2.0) & (raw[:, 1] > -2.1) & (raw[:, 1] < .5)][::4]
+    for i, a in enumerate(subset):
+        for b in subset[i+1:]:
+            if grid.is_line_collision_free(a, b):
+                axes[1].plot([a[0], b[0]], [a[1], b[1]], c="#64748b", alpha=.18, lw=.6, zorder=1)
+    axes[1].set(xlim=(-4.65, -2.0), ylim=(-2.2, .5), title="First turn | a sample of valid visibility edges")
+    axes[0].legend(loc="lower right", fontsize=8)
+    axes[1].legend(loc="upper right", fontsize=8)
+    fig.suptitle("Voronoi-Visibility reproduction: add safe line-of-sight edges, then search their total length", fontsize=12)
+    fig.tight_layout(rect=(0, 0, 1, .92))
+    fig.savefig(OUT / "voronoi_vs_vv.png", dpi=180)
     plt.close(fig)
 
 
@@ -133,7 +161,7 @@ def video(runs, scene):
         label = ax.text(.02, .97, "", transform=ax.transAxes, va="top", fontsize=10)
         artists.append((trail, planned, body, carts, label))
     clock = fig.suptitle("", fontsize=20)
-    fig.text(.5, .025, "2D kinematic simulation | five classical baselines + event-triggered replanning | identical cart schedules | 3x playback", ha="center", fontsize=12)
+    fig.text(.5, .025, "2D kinematic simulation | five baselines + Voronoi-Visibility (Niu et al., 2019) | identical cart schedules | 3x playback", ha="center", fontsize=12)
 
     def update(t):
         clock.set_text(f"Warehouse: t = {t:.1f} s")
@@ -146,10 +174,9 @@ def video(runs, scene):
                            float(np.interp(t, ts, [p["y"] for p in tr])))
             for cart, o in zip(carts, scene.moving):
                 cart.center = o.position(t)
-            history = [h for h in run["path_history"] if h["t"] <= t]
-            p = np.asarray(history[-1]["path"] if history else run["initial_path"])
+            p = np.asarray(run["initial_path"])
             planned.set_data(p[:, 0], p[:, 1])
-            label.set_text(f"Replans: {len(history)}"+(f" | {run['status']}" if t >= ts[-1] else ""))
+            label.set_text(run['status'] if t >= ts[-1] else "Navigating")
         return []
 
     end = max(r["finish_time"] for r in runs)
@@ -171,6 +198,7 @@ def main():
     runs = [archive[f"{scene.name}_{m}_seed0.json"] for m in METHODS]
     map_figure(scene, runs[0]["initial_path"])
     figures(rows, runs, scene)
+    method_figure(runs, scene)
     if args.video:
         video(runs, scene)
 

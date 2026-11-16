@@ -78,11 +78,12 @@ def main():
               "scene_sha256": scene.signature(), "algorithm": method,
               "planning_failed": nav.planning_failed, "planning_time_ms": nav.planning_time_ms,
               "control_step_s": dt,
-              "initial_path": nav.initial_path.tolist(), "path_history": nav.path_history,
-              "replans": nav.replans, "replan_attempts": nav.replan_attempts,
-              "replan_time_ms": nav.replan_ms, "trajectory": rows}
+              "initial_path": nav.initial_path.tolist(),
+              "planned_path_length": (float(np.linalg.norm(np.diff(nav.initial_path, axis=0), axis=1).sum())
+                                      if method not in ("apf", "dwa") else None),
+              "trajectory": rows}
     (out / f"{tag}_navigator.json").write_text(json.dumps(result, indent=2), encoding="utf-8")
-    print(f"[Navigator] Saved {tag}; replans={nav.replans}", flush=True)
+    print(f"[Navigator] Saved {tag}", flush=True)
 
 
 if __name__ == "__main__":

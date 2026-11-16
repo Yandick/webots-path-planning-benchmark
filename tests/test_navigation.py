@@ -11,6 +11,7 @@ import numpy as np
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from navigation.core import Navigator, astar
+from navigation.classical import voronoi_path, voronoi_visibility_path
 from navigation.scenarios import SCENES, Scene, MovingDisc, make_scene, clearance, validate_scene
 from navigation.grid_map import GridMap, StaticObstacle
 from navigation.settings import resolve_method
@@ -51,16 +52,19 @@ class NavigationTests(unittest.TestCase):
 
     def test_global_path_follower_completes_static_map(self):
         scene = replace(make_scene(), moving=[])
-        a, b = run(scene, "astar"), run(scene, "replan_dwa")
+        a, b = run(scene, "astar"), run(scene, "voronoi_visibility")
         self.assertEqual(a["status"], "success")
         self.assertEqual(b["status"], "success")
-        self.assertEqual(b["replans"], 0)
 
-    def test_replanning_uses_observations_to_route_around_blocker(self):
-        result = run(make_scene(), "replan_dwa")
-        self.assertEqual(result["status"], "success")
-        self.assertGreater(result["replans"], 0)
-        self.assertTrue(any(max(p[1] for p in h["path"]) > 2.2 for h in result["path_history"]))
+    def test_vv_visibility_search_shortens_the_greedy_voronoi_route(self):
+        scene = make_scene()
+        grid = scene.grid()
+        baseline = voronoi_path(grid, scene.start, scene.goal)
+        vv = voronoi_visibility_path(grid, scene.start, scene.goal)
+        length = lambda p: np.linalg.norm(np.diff(p, axis=0), axis=1).sum()
+        self.assertLess(length(vv), length(baseline))
+        self.assertTrue(np.array_equal(vv[0], scene.start))
+        self.assertTrue(np.array_equal(vv[-1], scene.goal))
 
     def test_one_map_has_turns_and_a_genuinely_blocked_short_route(self):
         scene = make_scene()
@@ -78,7 +82,7 @@ class NavigationTests(unittest.TestCase):
             self.assertLessEqual(max(speeds), .4)
 
     def test_rotation_can_recover_inside_comfort_margin(self):
-        nav = Navigator(make_scene())
+        nav = Navigator(make_scene(), "dwa")
         v, w = nav.dwa((0., 0., 0.), (0., 0.), (-1., 0.), np.array([[.25, 0.]]), .1)
         self.assertEqual(v, 0.)
         self.assertGreater(abs(w), 0.)
@@ -96,7 +100,7 @@ class NavigationTests(unittest.TestCase):
             resolve_method({"PLANNER_ALGO": "informed_rrt_star_dwa"})
 
     def test_classical_global_planners_return_collision_free_paths(self):
-        for method in ("astar", "rrt_star", "voronoi"):
+        for method in ("astar", "rrt_star", "voronoi", "voronoi_visibility"):
             nav = Navigator(make_scene(), method)
             self.assertFalse(nav.planning_failed, method)
             self.assertTrue(all(nav.grid.is_line_collision_free(a, b, step=.02)
@@ -128,16 +132,12 @@ class NavigationTests(unittest.TestCase):
         self.assertFalse(result["success"])
         self.assertEqual(result["control_p95_ms"], 0.)
 
-    def test_safe_start_can_exit_new_obstacle_inflation(self):
+    def test_astar_rejects_an_occupied_start(self):
         grid = GridMap(robot_radius=.18, safety_margin=.22,
                        obstacles=[StaticObstacle("cylinder", {"center": (0.,0.), "radius": .48})])
-        start = (-.8, 0.)
-        self.assertTrue(grid.is_occupied(*grid.world_to_grid(*start)))
-        path = astar(grid, start, (4., 0.))
-        self.assertIsNotNone(path)
-        self.assertTrue(all(grid.is_line_collision_free(a, b, step=.01, margin=.19)
-                            for a, b in zip(path[:-1], path[1:])))
-        self.assertIsNone(astar(grid, (-.5,0.), (4.,0.)))
+        self.assertTrue(grid.is_occupied(*grid.world_to_grid(-.8, 0.)))
+        self.assertIsNone(astar(grid, (-.8, 0.), (4., 0.)))
+
 
 
 if __name__ == "__main__":

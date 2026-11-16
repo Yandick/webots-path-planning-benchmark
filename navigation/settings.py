@@ -9,10 +9,19 @@ METHOD_LABELS = {
     "voronoi": "Voronoi",
     "apf": "APF",
     "dwa": "DWA",
-    "replan_dwa": "Event-triggered replanning",
+    "voronoi_visibility": "Voronoi-Visibility (Niu et al.)",
 }
 METHODS = tuple(METHOD_LABELS)
-DEFAULT_METHOD = "replan_dwa"
+METHOD_REFERENCES = {
+    "voronoi_visibility": {
+        "authors": "Niu, Savvaris, Tsourdos, Ji",
+        "year": 2019,
+        "title": "Voronoi-Visibility Roadmap-based Path Planning Algorithm for Unmanned Surface Vehicles",
+        "doi": "10.1017/S0373463318001005",
+        "implementation": "navigation/classical.py:voronoi_visibility_path",
+    }
+}
+DEFAULT_METHOD = "voronoi_visibility"
 ROOT = Path(__file__).resolve().parents[1]
 
 
