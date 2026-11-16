@@ -10,10 +10,13 @@
 - 持续堵路场景：固定路径平均 **52.04 s**，阻塞触发 **37.90 s**，减少 **27.17%**；两者均 5/5 到达且无几何碰撞。
 - 定时重规划在该场景平均 **33.28 s**，共重规划 40 次；阻塞触发共 12 次。事件触发减少计算次数，但并非最快。
 - 短暂横穿和快速横穿仍有碰撞，完整保留。方法解决的是持久阻塞后的路线切换，不具备运动预测能力。
-- **Webots 适配器和世界已生成**，原生物理运行结果单独存储在 `results/webots/`，不把二维数字写成 Webots 实测。GitHub Actions 另设原生 Webots 控制器检查，实际状态以 Actions 日志为准。
+- **Webots 原生物理验证已通过**：seed 0 持续堵路场景为 **51.712 s → 33.824 s**，减少 **34.59%**，两者均无几何碰撞。无动态障碍对照均为 19.392 s。原生共 4 次验证，不作为多次平均提升。
+- 原生最近激光点的几何误差验收已通过，四次运行最大误差为 0.0169 m；7 项回归检查和原生行为检查均通过。[CI 日志](https://github.com/Yandick/webots-path-planning-benchmark/actions/runs/43795919275) · [原生汇总](results/revised/webots_validation.json) · [原生原始轨迹](results/revised/webots_raw_runs.json.gz)
 
 ![paired results](results/revised/benchmark.png)
 ![blocked passage](results/revised/blocked_passage.png)
+
+![Webots 原生场景渲染快照](results/revised/webots_blocked_t28.png)
 
 [同步障碍物运动的二维演示视频](results/revised/blocked_passage.mp4) · [完整实验说明和答辩要点](docs/coursework_path_planning_report.md)
 
