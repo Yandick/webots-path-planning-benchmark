@@ -26,6 +26,7 @@ def main():
     out.mkdir(parents=True, exist_ok=True)
     rows, min_gap, length, prev = [], float("inf"), 0., None
     status = "timeout"
+    snapshots = set()
     recording = os.environ.get("RECORD_VIDEO", "0") == "1"
     if recording:
         supervisor.movieStartRecording(str(out / f"{tag}.mp4"), 1280, 720, 0, 85, 1, False)
@@ -43,6 +44,10 @@ def main():
         prev = p
         rows.append({"t": t, "x": float(p[0]), "y": float(p[1]), "clearance": gap,
                      "obstacles": [[*o.position(t), o.radius] for o in scene.moving]})
+        for snapshot in (12, 28):
+            if t >= snapshot and snapshot not in snapshots:
+                supervisor.exportImage(str(out / f"{tag}_t{snapshot}.png"), 100)
+                snapshots.add(snapshot)
         if gap <= 0:
             status = "collision"; break
         if np.linalg.norm(p-scene.goal) <= .25:

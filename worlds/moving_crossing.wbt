@@ -81,7 +81,7 @@ DEF ROBOT Robot {
       children [
         Lidar {
           name "lidar"
-          horizontalResolution 180
+          horizontalResolution 360
           numberOfLayers 1
           minRange 0.03
           maxRange 6.0

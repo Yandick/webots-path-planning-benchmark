@@ -18,7 +18,7 @@ def world_text(scene):
     robot = robot.replace("translation -4.0 -4.0 0.05", f"translation {scene.start[0]} {scene.start[1]} 0.05", 1)
     robot = robot.replace("rotation 0 0 1 0.785398", "rotation 0 0 1 0", 1)
     robot = robot.replace('controller "robot_navigator"', 'controller "coursework_navigator"')
-    robot = robot.replace("minRange 0.22", "minRange 0.03").replace("horizontalResolution 360", "horizontalResolution 180")
+    robot = robot.replace("minRange 0.22", "minRange 0.03")
     robot = robot.replace("mass 3.0", "density -1\n    mass 3.0")
     meta = json.dumps(json.dumps({"scene": scene.name, "seed": scene.seed}))
     robot = robot.replace('name "robot"', f'customData {meta}\n  name "robot"')

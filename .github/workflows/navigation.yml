@@ -1,7 +1,9 @@
 name: Navigation checks
 on:
   push:
+    paths-ignore: ['docs/**', 'results/**', 'README.md']
   pull_request:
+    paths-ignore: ['docs/**', 'results/**', 'README.md']
   workflow_dispatch:
 permissions:
   contents: read
@@ -35,6 +37,8 @@ jobs:
           python3 -m pip install -r requirements.txt
       - name: Run both controllers in native Webots
         run: python3 evaluation/webots_benchmark.py --scenes open_control blocked_passage --methods fixed_dwa replan_dwa --timeout 150
+      - name: Validate native geometry and blocked-route behavior
+        run: python3 evaluation/check_webots_smoke.py
       - uses: actions/upload-artifact@v4
         if: always()
         with:
