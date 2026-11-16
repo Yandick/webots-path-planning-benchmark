@@ -144,7 +144,9 @@ class Navigator:
         self.observation.update(pose[:2], points, t)
         if t+1e-9 < self.next_route_check:
             return
-        if not self.observation.blocks(self.remaining_path(pose[:2])):
+        remaining = self.remaining_path(pose[:2])
+        connection = resample_path([pose[:2], remaining[0]], .08)
+        if not self.observation.blocks(np.vstack((connection, remaining))):
             return
         self.next_route_check = t+self.cfg.replan_period
         begin = time.perf_counter()

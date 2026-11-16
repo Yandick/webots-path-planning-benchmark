@@ -19,11 +19,11 @@ EXPERIMENT_GROUPS = {
 NAVIGATION_PROTOCOL = {
     "dynamic_map": "static occupancy + observed hit marking, free-ray clearing and 1s expiry",
     "dynamic_map_source": "https://docs.nav2.org/jazzy/configuration_and_development/configuration_guide/core_servers/costmap_2d/costmap_plugins/obstacle/",
-    "replan": "check every control step; observed blockage triggers replanning with a 1s minimum interval between attempts",
+    "replan": "check remaining route and robot-to-route connection every control step; observed blockage triggers replanning with a 1s minimum interval between attempts",
     "local_controller_guide": "A* with the same dynamic observation layer and replan trigger",
     "shared_safety": "same speed, wheel, acceleration limits and scan-based braking",
     "inflation_escape": "checked connection and increasing-clearance motion at radius+0.03m; occupied cells are retained",
-    "development": "basic and warehouse seed0 checks; reported runs use the same fixed configuration across seeds0..4",
+    "development": "basic and warehouse diagnostic cases; reported runs use the same fixed configuration across seeds0..4",
 }
 METHOD_REFERENCES = {
     "astar": {"authors": "Hart, Nilsson, Raphael", "year": 1968,

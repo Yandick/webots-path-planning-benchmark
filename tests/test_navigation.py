@@ -162,6 +162,20 @@ class NavigationTests(unittest.TestCase):
         with patch.object(scene.moving[0], "position", side_effect=AssertionError("Oracle query")):
             nav.step(np.array([*scene.start, 0.]), (0., 0.), np.empty((0, 2)), 0., .1)
 
+    def test_offset_robot_replans_even_when_remaining_reference_is_clear(self):
+        scene = Scene("offset_reference", start=(-.75, -.14), goal=(-.85, 2.),
+                      moving=[MovingDisc("disc", .48, [[0, 0, 0], [100, 0, 0]])])
+        nav = Navigator(scene, "rrt_star")
+        nav.path = np.array([[-.85, -.3], [-.85, 2.]])
+        pose = np.array([*scene.start, math.pi/2])
+        points = scan(scene, pose, 20.)
+        nav.observation.update(pose[:2], points, 20.)
+        self.assertFalse(nav.observation.blocks(nav.remaining_path(pose[:2])))
+        nav.update_route(pose, points, 20.)
+        self.assertEqual(len(nav.plan_attempts), 1)
+        self.assertTrue(nav.plan_attempts[0]["success"])
+        self.assertTrue(np.allclose(nav.path[0], pose[:2]))
+
     def test_inflation_escape_keeps_the_obstacle_occupied(self):
         scene = Scene("escape", start=(.75, 0.), goal=(2., 0.), static=[StaticObstacle(
             "box", {"center": (0., 0.), "size": (1., 1.)})])
