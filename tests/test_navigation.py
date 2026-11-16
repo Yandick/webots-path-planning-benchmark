@@ -4,6 +4,7 @@ from dataclasses import replace
 from pathlib import Path
 import sys
 import unittest
+from unittest.mock import patch
 
 import numpy as np
 
@@ -48,11 +49,11 @@ class NavigationTests(unittest.TestCase):
         self.assertIsNotNone(path)
         self.assertTrue(all(grid.is_line_collision_free(a, b, step=.02) for a, b in zip(path[:-1], path[1:])))
 
-    def test_control_and_replanning_share_baseline_on_static_scene(self):
+    def test_global_path_follower_completes_static_map(self):
         scene = replace(make_scene(), moving=[])
-        a, b = run(scene, "fixed_dwa"), run(scene, "replan_dwa")
-        self.assertEqual(a["trajectory"], b["trajectory"])
+        a, b = run(scene, "astar"), run(scene, "replan_dwa")
         self.assertEqual(a["status"], "success")
+        self.assertEqual(b["status"], "success")
         self.assertEqual(b["replans"], 0)
 
     def test_replanning_uses_observations_to_route_around_blocker(self):
@@ -90,9 +91,42 @@ class NavigationTests(unittest.TestCase):
         self.assertTrue(np.allclose(velocity, [.2, 0.], atol=.02))
 
     def test_algorithm_override_is_validated_by_both_adapters(self):
-        self.assertEqual(resolve_method({"PLANNER_ALGO": "fixed_dwa"}), "fixed_dwa")
+        self.assertEqual(resolve_method({"PLANNER_ALGO": "astar"}), "astar")
         with self.assertRaises(ValueError):
             resolve_method({"PLANNER_ALGO": "informed_rrt_star_dwa"})
+
+    def test_classical_global_planners_return_collision_free_paths(self):
+        for method in ("astar", "rrt_star", "voronoi"):
+            nav = Navigator(make_scene(), method)
+            self.assertFalse(nav.planning_failed, method)
+            self.assertTrue(all(nav.grid.is_line_collision_free(a, b, step=.02)
+                                for a, b in zip(nav.path[:-1], nav.path[1:])), method)
+            with patch.object(nav, "dwa", side_effect=AssertionError("Global baseline called DWA")):
+                nav.step(np.array([*nav.scene.start, 0.]), (0., 0.), np.empty((0, 2)), 0., .1)
+
+    def test_line_check_catches_a_very_short_cell_intersection(self):
+        grid = GridMap([], min_x=0., max_x=3., min_y=0., max_y=3., resolution=1.)
+        grid.dist_map[:] = 2.
+        grid.dist_map[1, 1] = 0.
+        # x+y=2.0001 crosses the occupied cell's lower-left corner for 0.14mm.
+        for spacing in (.5, .05, .00001):
+            self.assertFalse(grid.is_line_collision_free((.1, 1.9001), (1.9, .1001), step=spacing))
+        self.assertTrue(grid.is_line_collision_free((.1, .1), (.9, .9)))
+        grid.dist_map[:] = 2.
+        self.assertTrue(grid.is_line_collision_free((.975, 1.025), (1., 1.)))
+
+    def test_local_baselines_use_goal_without_a_global_planner(self):
+        for method in ("apf", "dwa"):
+            scene = make_scene()
+            nav = Navigator(scene, method)
+            self.assertTrue(np.array_equal(nav.path, [scene.start, scene.goal]))
+
+    def test_sampling_planning_failure_is_recorded(self):
+        with patch("navigation.core.rrt_star", return_value=None):
+            result = run(make_scene(), "rrt_star")
+        self.assertEqual(result["status"], "planning_failed")
+        self.assertFalse(result["success"])
+        self.assertEqual(result["control_p95_ms"], 0.)
 
     def test_safe_start_can_exit_new_obstacle_inflation(self):
         grid = GridMap(robot_radius=.18, safety_margin=.22,

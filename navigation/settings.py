@@ -4,9 +4,12 @@ import os
 from pathlib import Path
 
 METHOD_LABELS = {
-    "fixed_dwa": "Fixed A* + DWA",
-    "periodic_dwa": "Periodic replanning",
-    "replan_dwa": "Blocked-triggered replanning",
+    "astar": "A*",
+    "rrt_star": "RRT*",
+    "voronoi": "Voronoi",
+    "apf": "APF",
+    "dwa": "DWA",
+    "replan_dwa": "Event-triggered replanning",
 }
 METHODS = tuple(METHOD_LABELS)
 DEFAULT_METHOD = "replan_dwa"

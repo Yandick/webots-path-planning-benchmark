@@ -71,11 +71,38 @@ class GridMap:
         return self.dist_map[gy, gx] > required
 
     def is_line_collision_free(self, p1, p2, step=.05, margin=None):
+        """Check every traversed grid cell; independent of sample spacing."""
         dx, dy = p2[0]-p1[0], p2[1]-p1[1]
         distance = math.hypot(dx, dy)
         if distance < 1e-5:
             return self.is_collision_free_point(*p1, margin)
-        count = int(math.ceil(distance/step))
-        return all(self.is_collision_free_point(p1[0]+i/count*dx,
-                                                p1[1]+i/count*dy, margin)
-                   for i in range(count+1))
+        if not all(self.min_x < p[0] < self.max_x and self.min_y < p[1] < self.max_y for p in (p1, p2)):
+            return False
+        gx, gy = self.world_to_grid(*p1)
+        end = self.world_to_grid(*p2)
+        required = self.inflation_radius if margin is None else margin
+        sx, sy = (1 if dx > 0 else -1), (1 if dy > 0 else -1)
+        tx = ((self.min_x+(gx+(dx > 0))*self.resolution-p1[0])/dx
+              if abs(dx) > 1e-12 else math.inf)
+        ty = ((self.min_y+(gy+(dy > 0))*self.resolution-p1[1])/dy
+              if abs(dy) > 1e-12 else math.inf)
+        dtx = self.resolution/abs(dx) if abs(dx) > 1e-12 else math.inf
+        dty = self.resolution/abs(dy) if abs(dy) > 1e-12 else math.inf
+        while True:
+            if not self.is_in_bounds(gx, gy) or self.dist_map[gy, gx] <= required:
+                return False
+            if (gx, gy) == end:
+                return True
+            if min(tx, ty) >= 1.-1e-12:
+                return self.is_collision_free_point(*p2, margin)
+            if tx < ty:
+                gx += sx
+                tx += dtx
+            elif ty < tx:
+                gy += sy
+                ty += dty
+            else:
+                gx += sx
+                gy += sy
+                tx += dtx
+                ty += dty

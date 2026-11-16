@@ -44,6 +44,13 @@ def run(scene, method="replan_dwa", dt=.10):
     status = "timeout"
     for step in range(int(scene.duration/dt)):
         t = step*dt
+        if nav.planning_failed:
+            status = "planning_failed"
+            rows.append({"t": 0., "x": float(pose[0]), "y": float(pose[1]), "theta": float(pose[2]),
+                         "v": 0., "omega": 0., "clearance": clearance(scene, pose[:2], 0),
+                         "tracked_obstacles": [], "obstacles": [[*o.position(0), o.radius] for o in scene.moving]})
+            min_gap = rows[-1]["clearance"]
+            break
         points = scan(scene, pose, t)
         v, w = nav.step(pose, velocity, points, t, dt)
         old = pose.copy()
@@ -73,9 +80,10 @@ def run(scene, method="replan_dwa", dt=.10):
             "success": status=="success", "status": status, "finish_time": rows[-1]["t"],
             "actual_path_length": distance, "min_surface_clearance": min_gap,
             "collision_count": int(collision), "replans": nav.replans,
+            "planning_time_ms": nav.planning_time_ms,
             "replan_attempts": nav.replan_attempts, "replan_time_ms": nav.replan_ms,
-            "control_mean_ms": float(np.mean(nav.steps_ms)),
-            "control_p95_ms": float(np.percentile(nav.steps_ms, 95)),
+            "control_mean_ms": float(np.mean(nav.steps_ms)) if nav.steps_ms else 0.,
+            "control_p95_ms": float(np.percentile(nav.steps_ms, 95)) if nav.steps_ms else 0.,
             "wall_time_s": time.perf_counter()-started,
             "initial_path": nav.initial_path.tolist(), "path_history": nav.path_history,
             "trajectory": rows}

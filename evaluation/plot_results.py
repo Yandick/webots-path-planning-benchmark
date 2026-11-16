@@ -1,4 +1,4 @@
-"""Render the single map, paired results, and a synchronized three-method replay."""
+"""Render the map, paired results, and a synchronized six-method replay."""
 import argparse
 import csv
 import gzip
@@ -20,7 +20,8 @@ from navigation.scenarios import make_scene
 from navigation.settings import METHODS, METHOD_LABELS
 
 OUT = ROOT / "results"
-COLORS = {"fixed_dwa": "#7c3aed", "periodic_dwa": "#d97706", "replan_dwa": "#0284c7"}
+COLORS = {"astar": "#7c3aed", "rrt_star": "#16a34a", "voronoi": "#0f766e",
+          "apf": "#dc2626", "dwa": "#d97706", "replan_dwa": "#0284c7"}
 CART_COLORS = ("#ef4444", "#f97316")
 plt.rcParams.update({"font.family": ["DejaVu Sans"], "font.size": 11,
                      "axes.spines.top": False, "axes.spines.right": False})
@@ -66,7 +67,7 @@ def map_figure(scene, initial_path):
 
 
 def figures(rows, runs, scene):
-    fig, axes = plt.subplots(1, 3, figsize=(14, 5))
+    fig, axes = plt.subplots(1, 3, figsize=(16, 5.5))
     for j, method in enumerate(METHODS):
         selected = [r for r in rows if r["algorithm"] == method]
         times = [float(r["finish_time"]) if r["status"] == "success" else scene.duration for r in selected]
@@ -77,21 +78,22 @@ def figures(rows, runs, scene):
         axes[2].bar(j, success/len(selected)*100, color=COLORS[method])
         axes[2].text(j, success/len(selected)*100+2, f"{success}/{len(selected)}", ha="center")
     for ax in axes:
-        ax.set_xticks(range(len(METHODS)), ["Fixed", "Periodic", "Event"])
+        ax.set_xticks(range(len(METHODS)), ["A*", "RRT*", "Voronoi", "APF", "DWA", "Event"], fontsize=9)
         ax.grid(axis="y", alpha=.2)
         ax.set_axisbelow(True)
     axes[0].set(title="Arrival time (mean +/- SD)", ylabel="Seconds; failures = 100 s")
     axes[1].set(title="Accepted replans (mean +/- SD)", ylabel="Count per trial")
     axes[2].set(title="Collision-free success", ylabel="Percent", ylim=(0, 112))
-    fig.suptitle("One warehouse map | 5 paired schedule phases | shared sensing and local controller", fontsize=14)
+    fig.suptitle("Robot obstacle avoidance | five classical baselines and the improved method | five seeds", fontsize=14)
     fig.tight_layout(rect=(0, 0, 1, .93))
     fig.savefig(OUT / "benchmark.png", dpi=180)
     plt.close(fig)
-    fig, axes = plt.subplots(1, 3, figsize=(17, 6.5))
-    for ax, run in zip(axes, runs):
+    fig, axes = plt.subplots(2, 3, figsize=(17, 13))
+    for ax, run in zip(axes.flat, runs):
         draw(ax, scene)
         initial = np.asarray(run["initial_path"])
-        ax.plot(initial[:, 0], initial[:, 1], "--", c="#64748b", lw=1.2, label="Initial path")
+        reference = "Goal direction" if run["algorithm"] in ("apf", "dwa") else "Initial path"
+        ax.plot(initial[:, 0], initial[:, 1], "--", c="#64748b", lw=1.2, label=reference)
         for i, h in enumerate(run["path_history"]):
             p = np.asarray(h["path"])
             ax.plot(p[:, 0], p[:, 1], "--", c=COLORS[run["algorithm"]], alpha=.45,
@@ -103,7 +105,7 @@ def figures(rows, runs, scene):
         ax.set_title(f"{METHOD_LABELS[run['algorithm']]}\n{run['status']}: {run['finish_time']:.1f}s; replans={run['replans']}")
         ax.legend(loc="lower right", fontsize=8)
     fig.suptitle("Seed 0 | 2D kinematic simulation\nCart snapshots at t=30s; trajectories cover the full run", fontsize=14)
-    fig.tight_layout(rect=(0, 0, 1, .91))
+    fig.subplots_adjust(left=.05, right=.99, bottom=.06, top=.90, wspace=.20, hspace=.40)
     fig.savefig(OUT / "warehouse.png", dpi=180)
     plt.close(fig)
 
@@ -113,10 +115,10 @@ def video(runs, scene):
     if not ffmpeg:
         raise RuntimeError("ffmpeg required for --video")
     plt.rcParams["animation.ffmpeg_path"] = ffmpeg
-    fig, axes = plt.subplots(1, 3, figsize=(19.2, 7.2))
-    fig.subplots_adjust(top=.82, bottom=.15, left=.04, right=.98, wspace=.18)
+    fig, axes = plt.subplots(2, 3, figsize=(19.2, 10.8))
+    fig.subplots_adjust(top=.90, bottom=.09, left=.04, right=.98, wspace=.18, hspace=.32)
     artists = []
-    for ax, run in zip(axes, runs):
+    for ax, run in zip(axes.flat, runs):
         draw(ax, scene)
         ax.set_title(METHOD_LABELS[run["algorithm"]], fontsize=14)
         trail, = ax.plot([], [], color=COLORS[run["algorithm"]], lw=2)
@@ -131,7 +133,7 @@ def video(runs, scene):
         label = ax.text(.02, .97, "", transform=ax.transAxes, va="top", fontsize=10)
         artists.append((trail, planned, body, carts, label))
     clock = fig.suptitle("", fontsize=20)
-    fig.text(.5, .045, "2D kinematic simulation | identical cart schedules | scan-derived velocity estimates | 3x playback", ha="center", fontsize=12)
+    fig.text(.5, .025, "2D kinematic simulation | five classical baselines + event-triggered replanning | identical cart schedules | 3x playback", ha="center", fontsize=12)
 
     def update(t):
         clock.set_text(f"Warehouse: t = {t:.1f} s")

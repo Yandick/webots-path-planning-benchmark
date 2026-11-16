@@ -24,6 +24,7 @@ def main():
     tag = os.environ.get("RUN_ID", f"{scene.name}_{method}_seed{scene.seed}")
     out = Path(os.environ.get("RUN_OUTPUT", str(ROOT / "results" / "webots")))
     out.mkdir(parents=True, exist_ok=True)
+    navigator_path = out / f"{tag}_navigator.json"
     rows, min_gap, length, prev = [], float("inf"), 0., None
     status = "timeout"
     snapshots = set()
@@ -50,6 +51,8 @@ def main():
                 snapshots.add(snapshot)
         if gap <= 0:
             status = "collision"; break
+        if navigator_path.exists() and json.loads(navigator_path.read_text(encoding="utf-8")).get("planning_failed"):
+            status = "planning_failed"; break
         if np.linalg.norm(p-scene.goal) <= .25:
             status = "success"; break
         if t >= scene.duration:

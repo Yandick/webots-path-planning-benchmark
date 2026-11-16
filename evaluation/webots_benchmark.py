@@ -18,8 +18,8 @@ from navigation.settings import METHODS
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--seeds", type=int, nargs="+", default=[0])
-    parser.add_argument("--methods", nargs="+", choices=METHODS, default=["fixed_dwa", "replan_dwa"])
-    parser.add_argument("--timeout", type=int, default=240)
+    parser.add_argument("--methods", nargs="+", choices=METHODS, default=list(METHODS))
+    parser.add_argument("--timeout", type=int, default=360)
     args = parser.parse_args()
     executable = os.environ.get("WEBOTS_BINARY") or shutil.which("webots") or shutil.which("webots.exe")
     if not executable:

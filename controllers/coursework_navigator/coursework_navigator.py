@@ -16,7 +16,7 @@ from navigation.settings import resolve_method
 
 def main():
     robot = Robot()
-    step = int(robot.getBasicTimeStep())
+    step = 3*int(robot.getBasicTimeStep())
     dt = step/1000
     meta = json.loads(robot.getCustomData())
     scene = make_scene(meta["scene"], meta["seed"])
@@ -71,11 +71,13 @@ def main():
                      "v": v, "omega": w, "measured_v": velocity[0], "measured_omega": velocity[1],
                      "roll": rpy[0], "pitch": rpy[1], "nearest_lidar_local": nearest,
                      "tracked_obstacles": nav.tracker.snapshot()})
-        if truth_path.exists() or t >= scene.duration or np.linalg.norm(pose[:2]-scene.goal) <= .25:
+        if nav.planning_failed or truth_path.exists() or t >= scene.duration or np.linalg.norm(pose[:2]-scene.goal) <= .25:
             break
     left.setVelocity(0.); right.setVelocity(0.)
     result = {"backend": "webots", "scene": scene.name, "seed": scene.seed,
               "scene_sha256": scene.signature(), "algorithm": method,
+              "planning_failed": nav.planning_failed, "planning_time_ms": nav.planning_time_ms,
+              "control_step_s": dt,
               "initial_path": nav.initial_path.tolist(), "path_history": nav.path_history,
               "replans": nav.replans, "replan_attempts": nav.replan_attempts,
               "replan_time_ms": nav.replan_ms, "trajectory": rows}

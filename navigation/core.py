@@ -1,7 +1,7 @@
-"""A* + shared DWA, with an optional sensor-triggered global replanning policy.
+"""Classical navigation baselines and sensor-triggered global replanning.
 
 The controller receives only pose, measured velocity and obstacle surface points.
-It cannot read moving-obstacle schedules, true positions, radii or future states.
+It does not query moving-obstacle schedules, true positions, radii or future states.
 """
 from collections import deque
 from dataclasses import dataclass
@@ -14,6 +14,7 @@ import numpy as np
 from .scenarios import static_distance
 from .settings import DEFAULT_METHOD, METHODS
 from .tracking import ScanTracker
+from .classical import rrt_star, voronoi_path, apf_command
 
 
 def angle(a):
@@ -113,9 +114,19 @@ class Navigator:
         self.scene, self.method = scene, method
         self.cfg = config or Config()
         self.grid = scene.grid()
-        self.path = astar(self.grid, scene.start, scene.goal)
-        if self.path is None:
-            raise ValueError("No static path")
+        begin = time.perf_counter()
+        if method == "rrt_star":
+            self.path = rrt_star(self.grid, scene.start, scene.goal, seed=scene.seed)
+        elif method == "voronoi":
+            self.path = voronoi_path(self.grid, scene.start, scene.goal)
+        elif method in ("apf", "dwa"):
+            self.path = np.asarray([scene.start, scene.goal])
+        else:
+            self.path = astar(self.grid, scene.start, scene.goal)
+        self.planning_time_ms = (time.perf_counter()-begin)*1000
+        self.planning_failed = self.path is None
+        if self.planning_failed:
+            self.path = np.asarray([scene.start])
         self.initial_path = self.path.copy()
         self.path_history = []
         self.positions = deque()
@@ -173,8 +184,22 @@ class Navigator:
 
     def step(self, pose, velocity, points, t, dt):
         tick = time.perf_counter()
+        if self.planning_failed:
+            return 0., 0.
+        if self.method in ("astar", "rrt_star", "voronoi"):
+            cmd = self.follow_path(pose, velocity, points, dt)
+            self.steps_ms.append((time.perf_counter()-tick)*1000)
+            return cmd
+        if self.method == "apf":
+            cmd = self.limit_command(apf_command(pose, velocity, self.scene.goal, points, dt, self.cfg), velocity, dt)
+            self.steps_ms.append((time.perf_counter()-tick)*1000)
+            return cmd
         p = np.asarray(pose[:2])
         velocities = self.tracker.update(points, self.scene.static, t)
+        if self.method == "dwa":
+            cmd = self.dwa(pose, velocity, self.scene.goal, points, dt, velocities)
+            self.steps_ms.append((time.perf_counter()-tick)*1000)
+            return cmd
         self.update_map(points, t)
         if self.route_obstructed(p, points):
             if self.route_blocked_since is None:
@@ -188,8 +213,7 @@ class Navigator:
             self.positions.popleft()
         stalled = (len(self.positions)>1 and t-self.positions[0][0] >= self.cfg.blocked_seconds-.05
                    and np.linalg.norm(p-self.positions[0][1]) < .18)
-        request = ((self.method == "replan_dwa" and (blocked_route or stalled)) or
-                   (self.method == "periodic_dwa" and t >= self.cfg.replan_cooldown))
+        request = self.method == "replan_dwa" and (blocked_route or stalled)
         if request and t-self.last_replan >= self.cfg.replan_cooldown and self.memory:
             self.last_replan = t
             self.replan_attempts += 1
@@ -207,6 +231,39 @@ class Navigator:
         cmd = self.dwa(pose, velocity, self.target(p), points, dt, velocities)
         self.steps_ms.append((time.perf_counter()-tick)*1000)
         return cmd
+
+    def limit_command(self, command, velocity, dt):
+        c = self.cfg
+        v = float(np.clip(command[0], max(0., velocity[0]-c.acceleration*dt),
+                          min(c.max_speed, velocity[0]+c.acceleration*dt)))
+        w = float(np.clip(command[1], max(-c.max_omega, velocity[1]-c.angular_acceleration*dt),
+                          min(c.max_omega, velocity[1]+c.angular_acceleration*dt)))
+        wheel = max(abs(v-.15*w), abs(v+.15*w))
+        scale = min(1., .5/max(wheel, 1e-9))
+        return v*scale, w*scale
+
+    def follow_path(self, pose, velocity, points, dt):
+        """Common execution of a global path: heading control and emergency braking.
+
+        This follower never samples alternative motions or plans another route.
+        """
+        c = self.cfg
+        target = self.target(np.asarray(pose[:2]))
+        delta = target-np.asarray(pose[:2])
+        error = angle(math.atan2(delta[1], delta[0])-pose[2])
+        remaining = np.linalg.norm(np.asarray(self.scene.goal)-pose[:2])
+        desired = c.max_speed*max(0., math.cos(error))*min(1., remaining/.8)
+        v, w = self.limit_command((desired, 2*error), velocity, dt)
+        # Stop along the commanded arc if the braking envelope meets a scan hit.
+        if len(points) and v > 0:
+            travel_time = dt+v/c.acceleration
+            times = np.linspace(0, travel_time, 12)
+            headings = pose[2]+w*times/2
+            positions = np.asarray(pose[:2])+v*times[:, None]*np.column_stack((np.cos(headings), np.sin(headings)))
+            distance = np.linalg.norm(positions[:, None, :]-points[None, :, :], axis=-1).min()
+            if distance < c.radius+c.margin:
+                v, _ = self.limit_command((0., w), velocity, dt)
+        return v, w
 
     def dwa(self, pose, velocity, target, points, dt, point_velocities=None):
         c = self.cfg
