@@ -122,6 +122,7 @@
     const spanX = bounds[1] - bounds[0];
     const spanY = bounds[3] - bounds[2];
     const side = Math.min(canvasWidth - 52, canvasHeight - 43);
+    if (side <= 0) return;
     const scale = side / Math.max(spanX, spanY);
     const left = (canvasWidth - side) / 2;
     const top = (canvasHeight - side) / 2 + 3;
@@ -453,11 +454,11 @@
   $("extra-time").textContent = fixed(featured.mean_time - baseline.mean_time, 2) + " s";
   $("extra-distance").textContent = fixed(featured.mean_path - baseline.mean_path, 3) + " m";
 
+  resizeCanvas();
   chooseRun();
   renderResults();
   if (window.ResizeObserver) new ResizeObserver(resizeCanvas).observe(canvas.parentElement);
   else window.addEventListener("resize", resizeCanvas);
-  resizeCanvas();
   if (!ctx) {
     $("data-error").hidden = false;
     $("data-error").textContent = "当前浏览器无法显示交互画布。实验表格、视频和原始数据仍可使用。";
