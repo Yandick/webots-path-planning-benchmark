@@ -5,57 +5,63 @@
   const $ = (id) => document.getElementById(id);
   const data = window.BENCHMARK_DATA;
   const menuButton = document.querySelector(".menu-toggle");
+  const nav = $("main-nav");
+  document.documentElement.classList.add("has-menu");
+  menuButton.hidden = false;
+  function showMenu(open) {
+    menuButton.setAttribute("aria-expanded", String(open));
+    menuButton.setAttribute("aria-label", open ? "收起导航" : "展开导航");
+    nav.classList.toggle("open", open);
+  }
   menuButton.addEventListener("click", function () {
-    const expanded = this.getAttribute("aria-expanded") !== "true";
-    this.setAttribute("aria-expanded", String(expanded));
-    this.setAttribute("aria-label", expanded ? "收起导航" : "展开导航");
-    $("main-nav").classList.toggle("open", expanded);
+    showMenu(this.getAttribute("aria-expanded") !== "true");
   });
   document.querySelectorAll("#main-nav a").forEach((link) => {
-    link.addEventListener("click", () => {
-      $("main-nav").classList.remove("open");
-      menuButton.setAttribute("aria-expanded", "false");
-      menuButton.setAttribute("aria-label", "展开导航");
-    });
+    link.addEventListener("click", () => showMenu(false));
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && nav.classList.contains("open")) {
+      showMenu(false);
+      menuButton.focus();
+    }
   });
 
+  $("copy-commands").hidden = false;
   $("copy-commands").addEventListener("click", async () => {
     const code = $("quickstart-code");
     try {
       if (!navigator.clipboard || !window.isSecureContext) throw new Error("Clipboard unavailable");
       await navigator.clipboard.writeText(code.textContent);
-      $("copy-feedback").textContent = "命令已复制。";
-      $("copy-commands").textContent = "已复制 ✓";
+      $("copy-feedback").textContent = "已复制命令。";
     } catch (_) {
       const range = document.createRange();
       range.selectNodeContents(code);
       const selection = window.getSelection();
       selection.removeAllRanges();
       selection.addRange(range);
-      $("copy-feedback").textContent = "已选中命令，请按 Ctrl+C / ⌘C 复制。";
+      $("copy-feedback").textContent = "已选中命令，可以用系统的复制功能拷贝。";
     }
   });
 
   if (!data || data.schema_version !== 1 || !Array.isArray(data.runs) || !data.runs.length) {
     $("data-error").hidden = false;
-    document.querySelectorAll(".playback button, .playback input, .playback select, .method-switcher button, #seed-select, .results-tabs button, #metric-select").forEach((element) => { element.disabled = true; });
-    $("group-description").textContent = "交互数据暂时不可用。下方保留已归档的实验图、视频和原始数据下载。";
     return;
   }
+  document.documentElement.classList.add("has-data");
 
   const methodById = new Map(data.methods.map((method) => [method.id, method]));
   const summaryById = new Map(data.summary.map((summary) => [summary.method, summary]));
   const runsByKey = new Map(data.runs.map((run) => [run.method + ":" + run.seed, run]));
-  const colors = {
-    astar: "#8366a5", rrt_star: "#477a9c", voronoi: "#a9853d",
-    apf: "#b86b56", dwa: "#7a8f4c", voronoi_qp: "#20644b"
-  };
   const state = {
-    method: "voronoi_qp", seed: data.seeds[0], time: 18, playing: false,
-    speed: 2, group: "global", metric: "clearance", previousFrame: null
+    method: "voronoi_qp", seed: data.seeds[0], time: 0, playing: false,
+    speed: 2, view: "iso", group: "global", metric: "clearance", previousFrame: null
   };
   const canvas = $("trajectory-canvas");
   const ctx = canvas.getContext("2d");
+  if (ctx) document.documentElement.classList.add("has-replay");
+  const motionPreference = window.matchMedia("(prefers-reduced-motion: reduce)");
+  let playbackRequested = !motionPreference.matches;
+  let viewerVisible = !window.IntersectionObserver;
   let frameRequest = null;
   let canvasWidth = 1;
   let canvasHeight = 1;
@@ -115,142 +121,230 @@
     return waypoints[waypoints.length - 1].slice(1);
   }
 
-  function draw() {
-    if (!ctx) return;
-    const active = run();
-    const bounds = data.scene.bounds;
-    const spanX = bounds[1] - bounds[0];
-    const spanY = bounds[3] - bounds[2];
-    const side = Math.min(canvasWidth - 52, canvasHeight - 43);
-    if (side <= 0) return;
-    const scale = side / Math.max(spanX, spanY);
-    const left = (canvasWidth - side) / 2;
-    const top = (canvasHeight - side) / 2 + 3;
-    const X = (x) => left + (x - bounds[0]) * scale;
-    const Y = (y) => top + (bounds[3] - y) * scale;
-    ctx.clearRect(0, 0, canvasWidth, canvasHeight);
-    ctx.fillStyle = "#fffef9";
-    ctx.fillRect(0, 0, canvasWidth, canvasHeight);
-    ctx.save();
-    ctx.beginPath();
-    ctx.rect(left, top, side, side);
-    ctx.clip();
-    ctx.fillStyle = "#f1f3e9";
-    ctx.fillRect(left, top, side, side);
-    ctx.strokeStyle = "#dfe5d5";
-    ctx.lineWidth = 0.6;
-    for (let value = -5; value <= 5; value += 1) {
-      ctx.beginPath(); ctx.moveTo(X(value), top); ctx.lineTo(X(value), top + side); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(left, Y(value)); ctx.lineTo(left + side, Y(value)); ctx.stroke();
-    }
-    data.scene.static.forEach((obstacle) => {
-      const x = X(obstacle.center[0] - obstacle.size[0] / 2);
-      const y = Y(obstacle.center[1] + obstacle.size[1] / 2);
-      const width = obstacle.size[0] * scale;
-      const height = obstacle.size[1] * scale;
-      const wall = Math.abs(obstacle.center[0]) >= 5 || Math.abs(obstacle.center[1]) >= 5;
-      ctx.fillStyle = wall ? "#a8b699" : "#ccd6bd";
-      ctx.strokeStyle = wall ? "#95a781" : "#a7b794";
-      ctx.lineWidth = 0.9;
-      ctx.fillRect(x, y, width, height);
-      ctx.strokeRect(x, y, width, height);
-      if (!wall && width > 10 && height > 10) {
-        ctx.fillStyle = "#dce3d1";
-        ctx.fillRect(x + 3, y + 3, width - 6, Math.min(3, height - 6));
-        ctx.strokeStyle = "#b8c6a6";
-        ctx.lineWidth = 0.6;
-        if (width > height) {
-          for (let offset = 12; offset < width - 4; offset += 14) {
-            ctx.beginPath(); ctx.moveTo(x + offset, y + 3); ctx.lineTo(x + offset, y + height - 3); ctx.stroke();
-          }
-        } else {
-          for (let offset = 12; offset < height - 4; offset += 14) {
-            ctx.beginPath(); ctx.moveTo(x + 3, y + offset); ctx.lineTo(x + width - 3, y + offset); ctx.stroke();
-          }
-        }
-      }
-    });
+  const { bounds, start, goal, robot_radius: robotRadius } = data.scene;
+  const [minX, maxX, minY, maxY] = bounds;
+  const spanX = maxX - minX;
+  const spanY = maxY - minY;
+  const shelves = [];
+  const walls = [];
+  data.scene.static.forEach((obstacle) => {
+    const [x, y] = obstacle.center;
+    const boundary = x <= minX || x >= maxX || y <= minY || y >= maxY;
+    (boundary ? walls : shelves).push(obstacle);
+  });
 
-    function line(points, stroke, width, dash) {
-      if (!points.length) return;
+  function corners(x, y, width, depth, z) {
+    const left = x - width / 2;
+    const right = x + width / 2;
+    const front = y - depth / 2;
+    const back = y + depth / 2;
+    return [[left, front, z], [right, front, z], [right, back, z], [left, back, z]];
+  }
+
+  function draw() {
+    if (!ctx || canvasWidth < 2 || canvasHeight < 2) return;
+    const active = run();
+    const iso = state.view === "iso";
+    const centerX = (minX + maxX) / 2;
+    const centerY = (minY + maxY) / 2;
+    const rise = 0.55;
+    const scale = iso
+      ? Math.min((canvasWidth - 36) / (0.8 * spanX + 0.6 * spanY + 0.6),
+        (canvasHeight - 22) / ((0.6 * spanX + 0.8 * spanY) * rise + 0.95))
+      : Math.min((canvasWidth - 48) / (spanX + 0.3), (canvasHeight - 30) / (spanY + 0.3));
+    const centerV = canvasHeight / 2 + (iso ? scale * 0.15 : 0);
+    function depth(x, y) { return 0.6 * x - 0.8 * y; }
+    function project(x, y, z = 0) {
+      const dx = x - centerX;
+      const dy = y - centerY;
+      return iso
+        ? [canvasWidth / 2 + scale * (0.8 * dx + 0.6 * dy), centerV + scale * (depth(dx, dy) * rise - z * 0.835)]
+        : [canvasWidth / 2 + scale * dx, centerV - scale * dy];
+    }
+    function trace(points) {
       ctx.beginPath();
       points.forEach((point, index) => {
-        if (index === 0) ctx.moveTo(X(point[0]), Y(point[1]));
-        else ctx.lineTo(X(point[0]), Y(point[1]));
+        const [x, y] = project(...point);
+        if (index === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
       });
-      ctx.strokeStyle = stroke;
+    }
+    function face(points, color) {
+      trace(points);
+      ctx.closePath();
+      ctx.fillStyle = color;
+      ctx.fill();
+    }
+    function line(points, color, width, dash = []) {
+      trace(points);
+      ctx.strokeStyle = color;
       ctx.lineWidth = width;
-      ctx.lineJoin = "round";
-      ctx.lineCap = "round";
-      ctx.setLineDash(dash || []);
+      ctx.setLineDash(dash);
       ctx.stroke();
       ctx.setLineDash([]);
     }
-
-    let reference = active.initial_path;
-    active.route_updates.forEach((update) => { if (update.t <= state.time) reference = update.path; });
-    line(reference, "#7f9274", 1.2, [4, 4]);
-
-    const sample = sampleAt(active.trajectory, state.time);
-    const executed = [data.scene.start];
-    for (const point of active.trajectory) {
-      if (point[0] > state.time) break;
-      executed.push([point[1], point[2]]);
+    // The cap and two visible faces use the same footprint in both views.
+    function block(x, y, w, h, base, top, colors) {
+      const lid = corners(x, y, w, h, top);
+      if (iso) {
+        const foot = corners(x, y, w, h, base);
+        face([foot[0], foot[1], lid[1], lid[0]], colors[1]);
+        face([foot[1], foot[2], lid[2], lid[1]], colors[2]);
+      }
+      face(lid, colors[0]);
     }
-    executed.push([sample[1], sample[2]]);
-    line(executed, colors[state.method] + "22", 8);
-    line(executed, colors[state.method], 2.6);
+    function rack(obstacle) {
+      const [x, y] = obstacle.center;
+      const [w, h] = obstacle.size;
+      block(x, y, w, h, 0, 0.41, ["#939e94", "#687970", "#53655d"]);
+      block(x, y, w, h, 0.41, 0.49, ["#d3b595", "#c49672", "#a0775c"]);
+      const baysX = Math.max(1, Math.round(w / 0.84));
+      const baysY = Math.max(1, Math.round(h / 0.84));
+      const cellW = w / baysX;
+      const cellH = h / baysY;
+      for (let row = baysY - 1; row >= 0; row -= 1) {
+        for (let col = 0; col < baysX; col += 1) {
+          const bx = x - w / 2 + (col + 0.5) * cellW;
+          const by = y - h / 2 + (row + 0.5) * cellH;
+          block(bx, by, cellW - 0.055, cellH - 0.055, 0.49, 0.8, ["#ddd1b2", "#bcaa88", "#a5967a"]);
+          face(corners(bx, by, cellW * 0.16, cellH - 0.06, 0.8), "#efe2bd");
+        }
+      }
+    }
+    function disc(x, y, radius, height, cap, side) {
+      const [u, v] = project(x, y, height);
+      const bottom = project(x, y)[1];
+      const rx = radius * scale;
+      const ry = rx * (iso ? rise : 1);
+      ctx.beginPath();
+      ctx.ellipse(u, bottom, rx, ry, 0, 0, Math.PI);
+      ctx.ellipse(u, v, rx, ry, 0, Math.PI, 2 * Math.PI);
+      ctx.closePath();
+      ctx.fillStyle = side;
+      ctx.fill();
+      ctx.beginPath();
+      ctx.ellipse(u, v, rx, ry, 0, 0, 2 * Math.PI);
+      ctx.fillStyle = cap;
+      ctx.fill();
+      return [u, v];
+    }
+    function ring(x, y, radius, color, width) {
+      const [u, v] = project(x, y);
+      ctx.beginPath();
+      ctx.ellipse(u, v, radius * scale, radius * scale * (iso ? rise : 1), 0, 0, Math.PI * 2);
+      ctx.strokeStyle = color;
+      ctx.lineWidth = width;
+      ctx.stroke();
+    }
+    function pin(point, name, direction) {
+      const [x, y] = project(...point);
+      const tagX = Math.max(17, Math.min(canvasWidth - 17, x + direction * 23));
+      const tagY = Math.max(11, Math.min(canvasHeight - 11, y + (iso ? 18 : -direction * 22)));
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.lineTo(tagX, tagY);
+      ctx.strokeStyle = "#dce5d2";
+      ctx.lineWidth = 0.9;
+      ctx.stroke();
+      ctx.fillStyle = "#27312e";
+      ctx.fillRect(tagX - 15, tagY - 9, 30, 18);
+      ctx.fillStyle = "#f0f2e7";
+      ctx.font = '11px "Microsoft YaHei", sans-serif';
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(name, tagX, tagY);
+    }
 
-    (data.moving[String(state.seed)] || []).forEach((cart, index) => {
-      const position = cartPosition(cart.waypoints, state.time);
-      const x = X(position[0]);
-      const y = Y(position[1]);
-      const radius = cart.radius * scale;
-      ctx.beginPath(); ctx.arc(x, y, radius, 0, Math.PI * 2);
-      ctx.fillStyle = index ? "#d7a95e" : "#ce8b4c";
-      ctx.fill(); ctx.strokeStyle = "#a8743c"; ctx.lineWidth = 1; ctx.stroke();
-      ctx.beginPath(); ctx.arc(x - radius * 0.13, y - radius * 0.17, radius * 0.46, 0, Math.PI * 2);
-      ctx.fillStyle = "#ffffff33"; ctx.fill();
-      ctx.fillStyle = "#fff8e6";
-      ctx.font = Math.max(7, radius * 0.75) + "px monospace";
-      ctx.textAlign = "center"; ctx.textBaseline = "middle";
-      ctx.fillText(index === 0 ? "A" : "B", x, y);
+    ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+    ctx.lineJoin = "round";
+    ctx.lineCap = "round";
+    block(centerX, centerY, spanX + 0.24, spanY + 0.24, -0.24, 0, ["#515f59", "#3c4943", "#35423e"]);
+    for (let x = Math.ceil(minX); x <= maxX; x += 1) {
+      line([[x, minY], [x, maxY]], "#728077", 0.7);
+    }
+    for (let y = Math.ceil(minY); y <= maxY; y += 1) {
+      line([[minX, y], [maxX, y]], "#728077", 0.7);
+    }
+    walls.forEach((wall) => block(...wall.center, ...wall.size, 0, 0.17, ["#a2ada1", "#78877c", "#66786e"]));
+    shelves.forEach(({center: [x, y], size: [w, h]}) => {
+      face(corners(x + 0.13, y - 0.17, w, h, 0), "#2c383687");
     });
 
-    const startX = X(data.scene.start[0]);
-    const startY = Y(data.scene.start[1]);
-    ctx.beginPath(); ctx.arc(startX, startY, 4, 0, Math.PI * 2);
-    ctx.fillStyle = "#fcfff7"; ctx.fill(); ctx.strokeStyle = "#4d845c"; ctx.lineWidth = 1.8; ctx.stroke();
-    ctx.textAlign = "left"; ctx.textBaseline = "middle"; ctx.font = "8px monospace"; ctx.fillStyle = "#55774d";
-    ctx.fillText("START", startX + 9, startY + 12);
-    const goalX = X(data.scene.goal[0]);
-    const goalY = Y(data.scene.goal[1]);
-    ctx.strokeStyle = "#b16d3e"; ctx.lineWidth = 1.2;
-    ctx.beginPath(); ctx.arc(goalX, goalY, 7, 0, Math.PI * 2); ctx.stroke();
-    ctx.beginPath(); ctx.arc(goalX, goalY, 3, 0, Math.PI * 2); ctx.fillStyle = "#c3834b"; ctx.fill();
-    ctx.fillStyle = "#9b704e"; ctx.textAlign = "right"; ctx.fillText("GOAL", goalX - 11, goalY - 12);
+    let reference = active.initial_path;
+    for (const update of active.route_updates) {
+      if (update.t <= state.time) reference = update.path;
+    }
+    line(reference, "#e0e6cf", 1.5, [4, 4]);
+    const sample = sampleAt(active.trajectory, state.time);
+    const [, robotX, robotY, heading] = sample;
+    const executed = [start];
+    for (const [t, x, y] of active.trajectory) {
+      if (t > state.time) break;
+      executed.push([x, y]);
+    }
+    executed.push([robotX, robotY]);
+    line(executed, "#343a30", 5.5);
+    line(executed, "#ff8954", 3.3);
+    ring(...start, 0.16, "#fff1d7", 1.4);
+    ring(...goal, 0.22, "#ecf2de", 1.5);
+    ring(...goal, 0.08, "#ecf2de", 1.5);
 
-    const bodyX = X(sample[1]);
-    const bodyY = Y(sample[2]);
-    const radius = data.scene.robot_radius * scale;
-    const endedInCollision = state.time >= active.finish_time && active.status === "collision";
-    ctx.save();
-    ctx.translate(bodyX, bodyY);
-    ctx.rotate(-sample[3]);
-    ctx.beginPath(); ctx.arc(0, 0, radius + 4, 0, Math.PI * 2); ctx.fillStyle = colors[state.method] + "25"; ctx.fill();
-    ctx.beginPath(); ctx.arc(0, 0, radius, 0, Math.PI * 2);
-    ctx.fillStyle = endedInCollision ? "#b44f39" : colors[state.method]; ctx.fill();
-    ctx.strokeStyle = "#fffef9"; ctx.lineWidth = 1.4; ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(radius * 0.65, 0); ctx.lineTo(-radius * 0.35, -radius * 0.42); ctx.lineTo(-radius * 0.35, radius * 0.42); ctx.closePath(); ctx.fillStyle = "#fffef9"; ctx.fill();
-    ctx.restore();
-    ctx.restore();
+    // Paint objects from back to front so shelving can occlude a passing cart.
+    const objects = shelves.map((shelf) => ({
+      depth: depth(...shelf.center), paint: () => rack(shelf)
+    }));
+    data.moving[String(state.seed)].forEach((cart) => {
+      const [x, y] = cartPosition(cart.waypoints, state.time);
+      objects.push({ depth: depth(x, y), paint() {
+        disc(x, y, cart.radius, 0.7, "#91d2d1", "#50888b");
+        line([[x - cart.radius * 0.45, y, 0.7], [x + cart.radius * 0.45, y, 0.7]], "#458284", 1.6);
+      }});
+    });
+    objects.push({ depth: depth(robotX, robotY), paint() {
+      const collision = state.time >= active.finish_time && active.status === "collision";
+      const robotColor = collision ? "#ff6956" : "#ffab70";
+      ring(robotX, robotY, robotRadius + 0.13, robotColor, 1.3);
+      disc(robotX, robotY, robotRadius, 0.14, robotColor, "#b75935");
+      const arrow = [[0.78, 0], [-0.38, 0.5], [-0.38, -0.5]].map(([dx, dy]) =>
+        [robotX + robotRadius * (dx * Math.cos(heading) - dy * Math.sin(heading)),
+          robotY + robotRadius * (dx * Math.sin(heading) + dy * Math.cos(heading)), 0.14]);
+      face(arrow, "#3c392b");
+    }});
+    objects.sort((a, b) => a.depth - b.depth).forEach((object) => object.paint());
+    pin(start, "起点", -1);
+    pin(goal, "终点", 1);
 
-    ctx.strokeStyle = "#c4cfb7"; ctx.lineWidth = 0.8; ctx.strokeRect(left, top, side, side);
-    ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillStyle = "#94a185"; ctx.font = "7px monospace";
-    [-4, -2, 0, 2, 4].forEach((value) => { ctx.fillText(String(value), X(value), top + side + 12); });
-    ctx.textAlign = "right";
-    [-4, -2, 0, 2, 4].forEach((value) => { ctx.fillText(String(value), left - 7, Y(value)); });
-    ctx.textAlign = "left"; ctx.fillText("m", left + side + 4, top + side + 12);
+    // Keep the current position visible when the robot passes behind a shelf.
+    if (iso) {
+      const [x, y] = project(robotX, robotY, 0.14);
+      const tagY = Math.max(11, y - Math.max(21, scale * 0.94));
+      ctx.beginPath();
+      ctx.moveTo(x, y - 2);
+      ctx.lineTo(x, tagY);
+      ctx.strokeStyle = "#ffb27e";
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      ctx.fillStyle = "#ffb27e";
+      ctx.fillRect(x - 20, tagY - 8, 40, 16);
+      ctx.fillStyle = "#242924";
+      ctx.textAlign = "center";
+      ctx.fillText("机器人", x, tagY);
+    }
+
+    if (!iso) {
+      ctx.fillStyle = "#b8c5bb";
+      ctx.font = "10px Consolas, monospace";
+      ctx.textAlign = "center";
+      for (let tick = Math.ceil(minX / 2) * 2; tick < maxX; tick += 2) {
+        const [x, y] = project(tick, minY);
+        ctx.fillText(String(tick), x, y + 10);
+      }
+      ctx.textAlign = "right";
+      for (let tick = Math.ceil(minY / 2) * 2; tick < maxY; tick += 2) {
+        const [x, y] = project(minX, tick);
+        ctx.fillText(String(tick), x - 7, y);
+      }
+    }
   }
 
   function resizeCanvas() {
@@ -267,23 +361,31 @@
   function updateClock() {
     const active = run();
     $("timeline").value = String(state.time);
+    $("timeline").style.setProperty("--played", (100 * state.time / active.finish_time) + "%");
     $("clock").textContent = fixed(state.time, 2) + " / " + fixed(active.finish_time, 2) + " s";
     $("timeline").setAttribute("aria-valuetext", fixed(state.time, 2) + " 秒，共 " + fixed(active.finish_time, 2) + " 秒");
     const finished = state.time >= active.finish_time;
-    const descriptions = { success: "无碰撞到达", collision: "碰撞结束", timeout: "超时结束" };
-    $("run-status").textContent = finished ? descriptions[active.status] : (state.playing ? "正在回放" : "已暂停");
+    const descriptions = { success: "已到达", collision: "发生碰撞", timeout: "已超时" };
+    const position = state.time === 0 ? "起点" : "已暂停";
+    $("run-status").textContent = finished ? descriptions[active.status] : (state.playing ? "正在回放" : position);
     $("run-status").classList.toggle("collision", finished && active.status === "collision");
   }
 
-  function setPlaying(value) {
-    state.playing = value;
+  function syncPlayback() {
+    const playing = Boolean(ctx && playbackRequested && viewerVisible && !document.hidden && state.time < run().finish_time);
+    if (playing === state.playing) return;
+    state.playing = playing;
     state.previousFrame = null;
-    $("play-icon").textContent = value ? "Ⅱ" : "▶";
-    $("play-toggle").setAttribute("aria-pressed", String(value));
-    $("play-toggle").setAttribute("aria-label", value ? "暂停轨迹" : "播放轨迹");
+    $("play-toggle").setAttribute("aria-pressed", String(playing));
+    $("play-toggle").setAttribute("aria-label", playing ? "暂停轨迹" : "播放轨迹");
     updateClock();
     if (frameRequest !== null) cancelAnimationFrame(frameRequest);
-    frameRequest = value ? requestAnimationFrame(animate) : null;
+    frameRequest = playing ? requestAnimationFrame(animate) : null;
+  }
+
+  function requestPlayback(play) {
+    playbackRequested = play;
+    syncPlayback();
   }
 
   function animate(timestamp) {
@@ -294,53 +396,122 @@
     state.previousFrame = timestamp;
     updateClock();
     draw();
-    if (state.time >= run().finish_time) setPlaying(false);
+    if (state.time >= run().finish_time) requestPlayback(false);
     else frameRequest = requestAnimationFrame(animate);
   }
 
   function chooseRun() {
-    setPlaying(false);
     const active = run();
     state.time = Math.min(state.time, active.finish_time);
+    state.previousFrame = null;
+    if (state.time >= active.finish_time) playbackRequested = false;
     $("timeline").max = String(active.finish_time);
     $("seed-select").value = String(state.seed);
-    $("selected-method").textContent = label(state.method);
-    $("run-time-label").textContent = active.status === "success" ? "本次到达耗时" : "本次终止时间";
+    $("method-select").value = state.method;
+    $("run-time-label").textContent = active.status === "success" ? "到达耗时" : "终止时间";
     $("run-time").textContent = fixed(active.finish_time, 2) + " s";
     $("run-clearance").textContent = fixed(active.min_clearance, 4) + " m";
     $("run-replans").textContent = active.replan_count + " 次";
-    canvas.setAttribute("aria-label", label(state.method) + "，seed " + state.seed + "，10 米乘 10 米仓库中的已归档二维轨迹。运行结果：" + (active.status === "success" ? "无碰撞到达" : active.status === "collision" ? "碰撞" : "超时") + "。");
-    document.querySelectorAll("[data-method]").forEach((button) => {
-      button.setAttribute("aria-pressed", String(button.dataset.method === state.method));
-    });
-    document.querySelector(".legend-line.executed").style.borderTopColor = colors[state.method];
+    const outcome = { success: "无碰撞到达", collision: "发生碰撞", timeout: "超时" };
+    canvas.setAttribute("aria-label", label(state.method) + " 在种子 " + state.seed + " 下的仓库轨迹，" + outcome[active.status] + "。");
+    syncPlayback();
     updateClock();
     draw();
   }
 
   $("play-toggle").addEventListener("click", () => {
     if (!state.playing && state.time >= run().finish_time) state.time = 0;
-    setPlaying(!state.playing);
+    requestPlayback(!state.playing);
   });
   $("reset-playback").addEventListener("click", () => {
-    setPlaying(false); state.time = 0; updateClock(); draw();
+    state.time = 0;
+    requestPlayback(false);
+    updateClock();
+    draw();
   });
   $("timeline").addEventListener("input", (event) => {
     const requestedTime = Number(event.target.value);
-    setPlaying(false); state.time = Math.min(requestedTime, run().finish_time); updateClock(); draw();
+    state.time = Math.min(requestedTime, run().finish_time);
+    requestPlayback(false);
+    updateClock();
+    draw();
   });
   $("speed-select").addEventListener("change", (event) => { state.speed = Number(event.target.value); });
+  data.methods.forEach(({ id }) => $("method-select").add(new Option(label(id), id)));
+  data.seeds.forEach((seed) => $("seed-select").add(new Option(String(seed), String(seed))));
   $("seed-select").addEventListener("change", (event) => { state.seed = Number(event.target.value); chooseRun(); });
-  document.querySelectorAll("[data-method]").forEach((button) => {
-    button.addEventListener("click", () => { state.method = button.dataset.method; chooseRun(); });
+  $("method-select").addEventListener("change", (event) => { state.method = event.target.value; chooseRun(); });
+  const viewButtons = document.querySelectorAll("[data-view]");
+  viewButtons.forEach((button) => {
+    button.addEventListener("click", () => {
+      state.view = button.dataset.view;
+      viewButtons.forEach((option) => option.setAttribute("aria-pressed", String(option === button)));
+      draw();
+    });
   });
-  document.addEventListener("visibilitychange", () => { if (document.hidden) setPlaying(false); });
+  document.addEventListener("visibilitychange", syncPlayback);
+  motionPreference.addEventListener("change", (event) => {
+    if (event.matches) requestPlayback(false);
+  });
+  if (window.IntersectionObserver && ctx) {
+    const observer = new IntersectionObserver(([entry]) => {
+      viewerVisible = entry.isIntersecting;
+      syncPlayback();
+    });
+    observer.observe(document.querySelector(".instrument"));
+  }
+
+  const collisionCase = runsByKey.get("astar:4");
+  const hasCollisionCase = collisionCase && collisionCase.status === "collision";
+  const arrivals = data.runs.filter((record) => record.status === "success").length;
+  $("replay-collision").addEventListener("click", () => {
+    if (!hasCollisionCase) return;
+    state.method = collisionCase.method;
+    state.seed = collisionCase.seed;
+    state.time = Math.max(0, collisionCase.finish_time - 5);
+    chooseRun();
+    $("play-toggle").focus({ preventScroll: true });
+    document.querySelector(".instrument").scrollIntoView({ block: "center" });
+    requestPlayback(true);
+  });
 
   const groups = {
     global: ["astar", "rrt_star", "voronoi", "voronoi_qp"],
     local: ["astar", "apf", "dwa"],
     webots: ["astar", "rrt_star", "voronoi", "apf", "dwa", "voronoi_qp"]
   };
+  function renderRecords() {
+    const method = $("record-method").value;
+    const statuses = { success: "到达", collision: "碰撞", timeout: "超时" };
+    const rows = data.seeds.map((seed) => {
+      const record = runsByKey.get(method + ":" + seed);
+      const row = element("tr");
+      row.append(
+        element("td", "", seed),
+        element("td", record.status === "success" ? "" : "failed-run", statuses[record.status]),
+        element("td", "", fixed(record.finish_time, 2) + " s"),
+        element("td", "", fixed(record.path_length, 3) + " m"),
+        element("td", "", fixed(record.min_clearance, 4) + " m"),
+        element("td", "", record.replan_count)
+      );
+      return row;
+    });
+    $("records-body").replaceChildren(...rows);
+  }
+
+  function setRecordMethods() {
+    const native = state.group === "webots";
+    $("run-records").hidden = native;
+    if (native) return;
+    const select = $("record-method");
+    const previous = select.value;
+    const methods = groups[state.group];
+    select.replaceChildren(...methods.map((id) => new Option(label(id, state.group === "local"), id)));
+    if (methods.includes(previous)) select.value = previous;
+    renderRecords();
+  }
+  $("record-method").addEventListener("change", renderRecords);
+
   function resultRows() {
     return groups[state.group].map((id) => {
       if (state.group === "webots") {
@@ -356,18 +527,23 @@
     const local = state.group === "local";
     const rows = resultRows();
     const descriptions = {
-      global: "四种全局规划器共用方向跟踪器，每种方法五个 seed。",
-      local: "APF、DWA 与公共方向跟踪器共用 A* 引导；A* 的运行同时作为跟踪器对照。",
-      webots: "Webots R2025a 的 seed 0 原生验证，六种方法分别运行一次。"
+      global: "四种规划器共用一个方向跟踪器，各跑五次。同一轮里，小车经过路口的时刻相同。",
+      local: "三种控制器都沿 A* 给出的路线行驶。公共方向跟踪器一行取自 A* 的五次运行。",
+      webots: "在 Webots R2025a 中另跑了一组验证。六种方法各跑一次，都使用种子 0。"
     };
     $("group-description").textContent = descriptions[state.group];
-    $("dataset-label").textContent = native ? "NATIVE WEBOTS / SEED 0" : "2D KINEMATIC / 5 SEEDS";
-    $("time-header").textContent = native ? "耗时" : "平均耗时";
-    $("length-header").textContent = native ? "实际行程" : "平均行程";
-    $("clearance-header").textContent = native ? "最低净空" : "平均最低净空";
-    $("table-note").textContent = native
-      ? "原生结果独立展示；归档源提交 " + data.webots.source_commit.slice(0, 7) + "，非本次页面构建重跑。"
-      : "耗时、行程仅统计成功运行；净空统计全部五次。";
+    const headers = { "time-header": "耗时", "length-header": native ? "实际行程" : "行程" };
+    for (const [id, name] of Object.entries(headers)) {
+      $(id).replaceChildren(name);
+      if (!native) $(id).prepend(element("span", "header-prefix", "平均"));
+    }
+    $("distance-average").hidden = native;
+    $("replay-collision").hidden = native || !hasCollisionCase;
+    if (native) {
+      $("table-note").replaceChildren("每行是一次 Webots 运行。代码版本 ", element("code", "", data.webots.source_commit.slice(0, 7)), "。");
+    } else {
+      $("table-note").textContent = "耗时和行程只对成功到达的运行取平均。距离一栏包含全部五次，发生碰撞的那次也算在内。";
+    }
     const body = $("results-body");
     body.replaceChildren();
     rows.forEach((row) => {
@@ -382,21 +558,19 @@
       body.append(tr);
     });
     if (native) {
-      $("evidence-text").textContent = "这是独立的原生验证，不与五个 seed 的二维统计混算。已归档结果包含完整日志、传感器几何检查和对应 CI 记录。";
-      $("evidence-link").href = data.webots.ci_url;
-      $("evidence-link").textContent = "查看归档 CI ↗";
+      $("evidence-text").textContent = "原生仿真每 32 毫秒检查一次机器人与障碍物的实际间距。六次运行都无碰撞到达了终点。";
     } else {
-      $("evidence-text").textContent = "A* 在 seed 4 与侧向驶入的装卸车发生一次碰撞，已计入 4/5 的成功率。其余方法在五次二维实验中均无碰撞到达。";
-      $("evidence-link").href = "results/collision_case.png";
-      $("evidence-link").textContent = "查看记录 ↗";
+      const incident = hasCollisionCase
+        ? "A* 在种子 4 的第 " + fixed(collisionCase.finish_time, 2) + " 秒撞上了从侧面驶入的装卸车。" : "";
+      $("evidence-text").textContent = incident + data.runs.length + " 次二维运行中有 " + arrivals + " 次无碰撞到达。";
     }
     const settings = {
-      clearance: { key: "mean_clearance", title: native ? "最低实际净空" : "平均最低实际净空", unit: "m", digits: 4,
-        subtitle: native ? "单次原生运行 · 越高表示距障碍更远" : "五次运行均值 · 越高表示距障碍更远" },
-      time: { key: "mean_time", title: native ? "运行耗时" : "成功平均耗时", unit: "s", digits: native ? 3 : 2,
-        subtitle: native ? "单次原生运行 · 越低表示到达更快" : "仅成功运行 · 越低表示到达更快" },
-      length: { key: "mean_path", title: native ? "实际行程" : "成功平均行程", unit: "m", digits: 3,
-        subtitle: native ? "单次原生运行 · 越低表示行程更短" : "仅成功运行 · 越低表示行程更短" }
+      clearance: { key: "mean_clearance", title: "与障碍物的最小距离", unit: "m", digits: 4,
+        subtitle: native ? "每种方法跑一次，记下车身边缘离障碍物最近时的距离。" : "每次先记下车身边缘离障碍物最近时的距离，再取五次的平均值。" },
+      time: { key: "mean_time", title: native ? "到达耗时" : "平均到达耗时", unit: "s", digits: native ? 3 : 2,
+        subtitle: "从出发到进入目标范围所用的仿真时间。" },
+      length: { key: "mean_path", title: native ? "实际行程" : "平均实际行程", unit: "m", digits: 3,
+        subtitle: "沿机器人实际走过的轨迹计算距离。" }
     };
     const metric = settings[state.metric];
     $("chart-title").textContent = metric.title;
@@ -426,6 +600,7 @@
     });
     $("results-panel").setAttribute("aria-labelledby", button.id);
     renderResults();
+    setRecordMethods();
   }
   tabs.forEach((button, index) => {
     button.addEventListener("click", () => chooseGroup(button));
@@ -446,21 +621,21 @@
   const baseline = summaryById.get("voronoi");
   const featured = summaryById.get("voronoi_qp");
   function percentage(id, number) {
-    $(id).replaceChildren(document.createTextNode(fixed(number, 1)), element("span", "", "%"));
+    $(id).textContent = (number >= 0 ? "+" : "−") + fixed(Math.abs(number), 1) + "%";
   }
   percentage("clearance-gain", (featured.mean_clearance / baseline.mean_clearance - 1) * 100);
-  percentage("curvature-gain", (1 - featured.mean_curvature / baseline.mean_curvature) * 100);
-  percentage("accel-gain", (1 - featured.mean_angular_accel / baseline.mean_angular_accel) * 100);
+  percentage("curvature-gain", (featured.mean_curvature / baseline.mean_curvature - 1) * 100);
+  percentage("accel-gain", (featured.mean_angular_accel / baseline.mean_angular_accel - 1) * 100);
   $("extra-time").textContent = fixed(featured.mean_time - baseline.mean_time, 2) + " s";
   $("extra-distance").textContent = fixed(featured.mean_path - baseline.mean_path, 3) + " m";
 
   resizeCanvas();
   chooseRun();
-  renderResults();
+  chooseGroup(tabs[0]);
   if (window.ResizeObserver) new ResizeObserver(resizeCanvas).observe(canvas.parentElement);
   else window.addEventListener("resize", resizeCanvas);
   if (!ctx) {
     $("data-error").hidden = false;
-    $("data-error").textContent = "当前浏览器无法显示交互画布。实验表格、视频和原始数据仍可使用。";
+    $("data-error").textContent = "当前浏览器用静态图显示种子 0 的六条路线。";
   }
 }());
