@@ -43,19 +43,23 @@
     }
   });
 
-  if (!data || data.schema_version !== 1 || !Array.isArray(data.runs) || !data.runs.length) {
+  if (data?.schema_version !== 2 || !data.scenes?.length || !data.runs?.length) {
     $("data-error").hidden = false;
     return;
   }
   document.documentElement.classList.add("has-data");
 
   const methodById = new Map(data.methods.map((method) => [method.id, method]));
-  const summaryById = new Map(data.summary.map((summary) => [summary.method, summary]));
-  const runsByKey = new Map(data.runs.map((run) => [run.method + ":" + run.seed, run]));
+  const sceneById = new Map(data.scenes.map((scene) => [scene.id, scene]));
+  const summaryByKey = new Map(data.summary.map((item) => [[item.scene, item.method].join(":"), item]));
+  const runsByKey = new Map(data.runs.map((item) => [[item.scene, item.method, item.seed].join(":"), item]));
+  const outcomes = { success: "到达", collision: "碰撞", timeout: "超时", planning_failed: "未找到路线" };
   const state = {
-    method: "voronoi_qp", seed: data.seeds[0], time: 0, playing: false,
+    scene: data.scenes[0].id, method: "voronoi_qp", seed: data.seeds[0], time: 0, playing: false,
     speed: 2, view: "iso", group: "global", metric: "clearance", previousFrame: null
   };
+  function scene() { return sceneById.get(state.scene); }
+  function summary(method) { return summaryByKey.get([state.scene, method].join(":")); }
   const canvas = $("trajectory-canvas");
   const ctx = canvas.getContext("2d");
   if (ctx) document.documentElement.classList.add("has-replay");
@@ -73,8 +77,11 @@
   function fixed(value, digits) {
     return value === null || value === undefined || !Number.isFinite(value) ? "—" : value.toFixed(digits);
   }
-  function run() {
-    return runsByKey.get(state.method + ":" + state.seed);
+  function measured(value, unit, digits) {
+    return Number.isFinite(value) ? fixed(value, digits) + " " + unit : "—";
+  }
+  function run(method = state.method, seed = state.seed) {
+    return runsByKey.get([state.scene, method, seed].join(":"));
   }
   function element(tag, className, text) {
     const node = document.createElement(tag);
@@ -88,8 +95,8 @@
     const first = trajectory[0];
     if (time <= first[0]) {
       const ratio = first[0] > 0 ? Math.max(0, time / first[0]) : 1;
-      return [time, data.scene.start[0] + ratio * (first[1] - data.scene.start[0]),
-        data.scene.start[1] + ratio * (first[2] - data.scene.start[1]), first[3], first[4]];
+      return [time, scene().start[0] + ratio * (first[1] - scene().start[0]),
+        scene().start[1] + ratio * (first[2] - scene().start[1]), first[3], first[4]];
     }
     const last = trajectory[trajectory.length - 1];
     if (time >= last[0]) return last.slice();
@@ -121,17 +128,36 @@
     return waypoints[waypoints.length - 1].slice(1);
   }
 
-  const { bounds, start, goal, robot_radius: robotRadius } = data.scene;
-  const [minX, maxX, minY, maxY] = bounds;
-  const spanX = maxX - minX;
-  const spanY = maxY - minY;
-  const shelves = [];
-  const walls = [];
-  data.scene.static.forEach((obstacle) => {
-    const [x, y] = obstacle.center;
-    const boundary = x <= minX || x >= maxX || y <= minY || y >= maxY;
-    (boundary ? walls : shelves).push(obstacle);
-  });
+  function svgNode(tag, attributes) {
+    const node = document.createElementNS("http://www.w3.org/2000/svg", tag);
+    for (const [name, value] of Object.entries(attributes)) node.setAttribute(name, value);
+    return node;
+  }
+
+  function planView(map, routes = []) {
+    const [left, right, bottom, top] = map.bounds;
+    const width = right - left;
+    const height = top - bottom;
+    const drawing = svgNode("svg", { viewBox: [left, -top, width, height].join(" "), "aria-hidden": "true" });
+    drawing.append(svgNode("rect", { x: left, y: -top, width, height, class: "plan-floor" }));
+    map.static.forEach((obstacle) => {
+      const [x, y] = obstacle.center;
+      if (obstacle.kind === "cylinder") {
+        drawing.append(svgNode("circle", { cx: x, cy: -y, r: obstacle.radius, class: "plan-wall" }));
+      } else {
+        const [w, h] = obstacle.size;
+        drawing.append(svgNode("rect", { x: x - w / 2, y: -y - h / 2, width: w, height: h, class: "plan-wall" }));
+      }
+    });
+    routes.forEach(({ path, style }) => {
+      drawing.append(svgNode("polyline", { points: path.map(([x, y]) => [x, -y].join(",")).join(" "),
+        class: style, "vector-effect": "non-scaling-stroke" }));
+    });
+    for (const [point, name] of [[map.start, "plan-start"], [map.goal, "plan-goal"]]) {
+      drawing.append(svgNode("circle", { cx: point[0], cy: -point[1], r: map.robot_radius, class: name }));
+    }
+    return drawing;
+  }
 
   function corners(x, y, width, depth, z) {
     const left = x - width / 2;
@@ -143,6 +169,11 @@
 
   function draw() {
     if (!ctx || canvasWidth < 2 || canvasHeight < 2) return;
+    const map = scene();
+    const { start, goal, robot_radius: robotRadius } = map;
+    const [minX, maxX, minY, maxY] = map.bounds;
+    const spanX = maxX - minX;
+    const spanY = maxY - minY;
     const active = run();
     const iso = state.view === "iso";
     const centerX = (minX + maxX) / 2;
@@ -193,22 +224,12 @@
       }
       face(lid, colors[0]);
     }
-    function rack(obstacle) {
+    function fixedObstacle(obstacle) {
       const [x, y] = obstacle.center;
-      const [w, h] = obstacle.size;
-      block(x, y, w, h, 0, 0.41, ["#939e94", "#687970", "#53655d"]);
-      block(x, y, w, h, 0.41, 0.49, ["#d3b595", "#c49672", "#a0775c"]);
-      const baysX = Math.max(1, Math.round(w / 0.84));
-      const baysY = Math.max(1, Math.round(h / 0.84));
-      const cellW = w / baysX;
-      const cellH = h / baysY;
-      for (let row = baysY - 1; row >= 0; row -= 1) {
-        for (let col = 0; col < baysX; col += 1) {
-          const bx = x - w / 2 + (col + 0.5) * cellW;
-          const by = y - h / 2 + (row + 0.5) * cellH;
-          block(bx, by, cellW - 0.055, cellH - 0.055, 0.49, 0.8, ["#ddd1b2", "#bcaa88", "#a5967a"]);
-          face(corners(bx, by, cellW * 0.16, cellH - 0.06, 0.8), "#efe2bd");
-        }
+      if (obstacle.kind === "cylinder") {
+        disc(x, y, obstacle.radius, 0.5, "#ded6ba", "#a5997d");
+      } else {
+        block(x, y, ...obstacle.size, 0, 0.28, ["#c7bd9f", "#958a70", "#847962"]);
       }
     }
     function disc(x, y, radius, height, cap, side) {
@@ -265,16 +286,16 @@
     for (let y = Math.ceil(minY); y <= maxY; y += 1) {
       line([[minX, y], [maxX, y]], "#728077", 0.7);
     }
-    walls.forEach((wall) => block(...wall.center, ...wall.size, 0, 0.17, ["#a2ada1", "#78877c", "#66786e"]));
-    shelves.forEach(({center: [x, y], size: [w, h]}) => {
-      face(corners(x + 0.13, y - 0.17, w, h, 0), "#2c383687");
+    const carts = map.moving[String(state.seed)];
+    carts.forEach((cart) => {
+      line(cart.waypoints.map((point) => point.slice(1)), "#86bdba", 1, [1, 4]);
     });
 
     let reference = active.initial_path;
     for (const update of active.route_updates) {
       if (update.t <= state.time) reference = update.path;
     }
-    line(reference, "#e0e6cf", 1.5, [4, 4]);
+    if (reference.length > 1) line(reference, "#e0e6cf", 1.5, [4, 4]);
     const sample = sampleAt(active.trajectory, state.time);
     const [, robotX, robotY, heading] = sample;
     const executed = [start];
@@ -289,11 +310,10 @@
     ring(...goal, 0.22, "#ecf2de", 1.5);
     ring(...goal, 0.08, "#ecf2de", 1.5);
 
-    // Paint objects from back to front so shelving can occlude a passing cart.
-    const objects = shelves.map((shelf) => ({
-      depth: depth(...shelf.center), paint: () => rack(shelf)
+    const objects = map.static.map((obstacle) => ({
+      depth: depth(...obstacle.center), paint: () => fixedObstacle(obstacle)
     }));
-    data.moving[String(state.seed)].forEach((cart) => {
+    carts.forEach((cart) => {
       const [x, y] = cartPosition(cart.waypoints, state.time);
       objects.push({ depth: depth(x, y), paint() {
         disc(x, y, cart.radius, 0.7, "#91d2d1", "#50888b");
@@ -314,7 +334,7 @@
     pin(start, "起点", -1);
     pin(goal, "终点", 1);
 
-    // Keep the current position visible when the robot passes behind a shelf.
+    // Keep the position visible when a wall occludes the robot in the angled view.
     if (iso) {
       const [x, y] = project(robotX, robotY, 0.14);
       const tagY = Math.max(11, y - Math.max(21, scale * 0.94));
@@ -361,11 +381,11 @@
   function updateClock() {
     const active = run();
     $("timeline").value = String(state.time);
-    $("timeline").style.setProperty("--played", (100 * state.time / active.finish_time) + "%");
+    $("timeline").style.setProperty("--played", (active.finish_time ? 100 * state.time / active.finish_time : 0) + "%");
     $("clock").textContent = fixed(state.time, 2) + " / " + fixed(active.finish_time, 2) + " s";
     $("timeline").setAttribute("aria-valuetext", fixed(state.time, 2) + " 秒，共 " + fixed(active.finish_time, 2) + " 秒");
     const finished = state.time >= active.finish_time;
-    const descriptions = { success: "已到达", collision: "发生碰撞", timeout: "已超时" };
+    const descriptions = { success: "已到达", collision: "发生碰撞", timeout: "已超时", planning_failed: "未找到路线" };
     const position = state.time === 0 ? "起点" : "已暂停";
     $("run-status").textContent = finished ? descriptions[active.status] : (state.playing ? "正在回放" : position);
     $("run-status").classList.toggle("collision", finished && active.status === "collision");
@@ -412,8 +432,7 @@
     $("run-time").textContent = fixed(active.finish_time, 2) + " s";
     $("run-clearance").textContent = fixed(active.min_clearance, 4) + " m";
     $("run-replans").textContent = active.replan_count + " 次";
-    const outcome = { success: "无碰撞到达", collision: "发生碰撞", timeout: "超时" };
-    canvas.setAttribute("aria-label", label(state.method) + " 在种子 " + state.seed + " 下的仓库轨迹，" + outcome[active.status] + "。");
+    canvas.setAttribute("aria-label", scene().label + "，" + label(state.method) + "，种子 " + state.seed + "，" + outcomes[active.status] + "。");
     syncPlayback();
     updateClock();
     draw();
@@ -439,7 +458,7 @@
   $("speed-select").addEventListener("change", (event) => { state.speed = Number(event.target.value); });
   data.methods.forEach(({ id }) => $("method-select").add(new Option(label(id), id)));
   data.seeds.forEach((seed) => $("seed-select").add(new Option(String(seed), String(seed))));
-  $("seed-select").addEventListener("change", (event) => { state.seed = Number(event.target.value); chooseRun(); });
+  $("seed-select").addEventListener("change", (event) => { state.seed = Number(event.target.value); chooseRun(); renderSmoothing(); });
   $("method-select").addEventListener("change", (event) => { state.method = event.target.value; chooseRun(); });
   const viewButtons = document.querySelectorAll("[data-view]");
   viewButtons.forEach((button) => {
@@ -461,15 +480,17 @@
     observer.observe(document.querySelector(".instrument"));
   }
 
-  const collisionCase = runsByKey.get("astar:4");
-  const hasCollisionCase = collisionCase && collisionCase.status === "collision";
-  const arrivals = data.runs.filter((record) => record.status === "success").length;
+  function collisionCase() {
+    return data.runs.find((item) => item.scene === state.scene && groups[state.group].includes(item.method) && item.status === "collision");
+  }
   $("replay-collision").addEventListener("click", () => {
-    if (!hasCollisionCase) return;
-    state.method = collisionCase.method;
-    state.seed = collisionCase.seed;
-    state.time = Math.max(0, collisionCase.finish_time - 5);
+    const incident = collisionCase();
+    if (!incident) return;
+    state.method = incident.method;
+    state.seed = incident.seed;
+    state.time = Math.max(0, incident.finish_time - 5);
     chooseRun();
+    renderSmoothing();
     $("play-toggle").focus({ preventScroll: true });
     document.querySelector(".instrument").scrollIntoView({ block: "center" });
     requestPlayback(true);
@@ -482,13 +503,12 @@
   };
   function renderRecords() {
     const method = $("record-method").value;
-    const statuses = { success: "到达", collision: "碰撞", timeout: "超时" };
     const rows = data.seeds.map((seed) => {
-      const record = runsByKey.get(method + ":" + seed);
+      const record = run(method, seed);
       const row = element("tr");
       row.append(
         element("td", "", seed),
-        element("td", record.status === "success" ? "" : "failed-run", statuses[record.status]),
+        element("td", record.status === "success" ? "" : "failed-run", outcomes[record.status]),
         element("td", "", fixed(record.finish_time, 2) + " s"),
         element("td", "", fixed(record.path_length, 3) + " m"),
         element("td", "", fixed(record.min_clearance, 4) + " m"),
@@ -513,36 +533,49 @@
   $("record-method").addEventListener("change", renderRecords);
 
   function resultRows() {
-    return groups[state.group].map((id) => {
-      if (state.group === "webots") {
-        const native = data.webots.runs.find((item) => item.method === id);
-        return { method: id, success: native.status === "success" ? 1 : 0, n: 1,
-          mean_time: native.finish_time, mean_path: native.path_length, mean_clearance: native.min_clearance };
-      }
-      return summaryById.get(id);
-    });
+    if (state.group === "webots") {
+      return data.webots.runs.filter((item) => item.scene === state.scene).map((item) => ({
+        method: item.method, status: item.status, success: item.status === "success" ? 1 : 0, n: 1,
+        mean_time: item.finish_time, mean_path: item.path_length, mean_clearance: item.min_clearance
+      }));
+    }
+    return groups[state.group].map(summary);
   }
+
+  function resultCounts(records) {
+    return Object.entries(outcomes).map(([status, title]) => {
+      const count = records.filter((row) => row.status === status).length;
+      return count ? count + " 次" + title : "";
+    }).filter(Boolean).join("，");
+  }
+  $("all-outcomes").textContent = "全部 " + data.runs.length + " 次二维运行中，" + resultCounts(data.runs) + "。";
+
   function renderResults() {
     const native = state.group === "webots";
     const local = state.group === "local";
     const rows = resultRows();
     const descriptions = {
-      global: "四种规划器共用一个方向跟踪器，各跑五次。同一轮里，小车经过路口的时刻相同。",
-      local: "三种控制器都沿 A* 给出的路线行驶。公共方向跟踪器一行取自 A* 的五次运行。",
-      webots: "在 Webots R2025a 中另跑了一组验证。六种方法各跑一次，都使用种子 0。"
+      global: "四种规划器共用同一个方向跟踪器。",
+      local: "三种控制器都用 A* 引导。公共方向跟踪器一行取自 A* 的运行记录。"
     };
-    $("group-description").textContent = descriptions[state.group];
-    const headers = { "time-header": "耗时", "length-header": native ? "实际行程" : "行程" };
-    for (const [id, name] of Object.entries(headers)) {
-      $(id).replaceChildren(name);
-      if (!native) $(id).prepend(element("span", "header-prefix", "平均"));
-    }
-    $("distance-average").hidden = native;
-    $("replay-collision").hidden = native || !hasCollisionCase;
+    $("group-description").textContent = native
+      ? scene().label + "的 Webots 原生记录，每种方法使用种子 " + data.webots.seed + " 跑一次。"
+      : descriptions[state.group] + "每种方法在" + scene().label + "上跑 " + data.seeds.length + " 次。";
+    $("time-header").textContent = native ? "结束时间" : "平均耗时";
+    $("length-header").textContent = native ? "实际行程" : "平均行程";
+    $("distance-average").textContent = native ? "" : "（" + data.seeds.length + " 次平均）";
+    const incident = native ? null : collisionCase();
+    $("replay-collision").hidden = !incident;
+    if (incident) $("replay-collision").textContent = "重放 " + label(incident.method) + " 碰撞前 5 秒";
     if (native) {
-      $("table-note").replaceChildren("每行是一次 Webots 运行。代码版本 ", element("code", "", data.webots.source_commit.slice(0, 7)), "。");
+      $("table-note").textContent = "每行是一次原生运行，耗时从出发算到运行结束。";
+      if (data.webots.ci_url) {
+        const link = element("a", "citation", "原生运行记录");
+        link.href = data.webots.ci_url;
+        $("table-note").append(" ", link);
+      }
     } else {
-      $("table-note").textContent = "耗时和行程只对成功到达的运行取平均。距离一栏包含全部五次，发生碰撞的那次也算在内。";
+      $("table-note").textContent = "耗时和行程只统计成功到达的运行。最小距离从车身边缘量起，再对所有运行取平均。";
     }
     const body = $("results-body");
     body.replaceChildren();
@@ -552,23 +585,19 @@
       const successCell = element("td");
       successCell.append(element("span", "success-count" + (row.success < row.n ? " partial" : ""), row.success + "/" + row.n));
       tr.append(successCell);
-      tr.append(element("td", "", fixed(row.mean_time, native ? 3 : 2) + " s"));
-      tr.append(element("td", "", fixed(row.mean_path, 3) + " m"));
-      tr.append(element("td", "", fixed(row.mean_clearance, 4) + " m"));
+      tr.append(element("td", "", measured(row.mean_time, "s", native ? 3 : 2)));
+      tr.append(element("td", "", measured(row.mean_path, "m", 3)));
+      tr.append(element("td", "", measured(row.mean_clearance, "m", 4)));
       body.append(tr);
     });
-    if (native) {
-      $("evidence-text").textContent = "原生仿真每 32 毫秒检查一次机器人与障碍物的实际间距。六次运行都无碰撞到达了终点。";
-    } else {
-      const incident = hasCollisionCase
-        ? "A* 在种子 4 的第 " + fixed(collisionCase.finish_time, 2) + " 秒撞上了从侧面驶入的装卸车。" : "";
-      $("evidence-text").textContent = incident + data.runs.length + " 次二维运行中有 " + arrivals + " 次无碰撞到达。";
-    }
+    const selected = native ? rows : data.runs.filter((item) =>
+      item.scene === state.scene && groups[state.group].includes(item.method));
+    $("evidence-text").textContent = scene().label + "，本组 " + selected.length + " 次运行中，" + resultCounts(selected) + "。";
     const settings = {
       clearance: { key: "mean_clearance", title: "与障碍物的最小距离", unit: "m", digits: 4,
-        subtitle: native ? "每种方法跑一次，记下车身边缘离障碍物最近时的距离。" : "每次先记下车身边缘离障碍物最近时的距离，再取五次的平均值。" },
-      time: { key: "mean_time", title: native ? "到达耗时" : "平均到达耗时", unit: "s", digits: native ? 3 : 2,
-        subtitle: "从出发到进入目标范围所用的仿真时间。" },
+        subtitle: native ? "每种方法跑一次，记下车身边缘离障碍物最近时的距离。" : "每次先记下车身边缘离障碍物最近时的距离，再取平均值。" },
+      time: { key: "mean_time", title: native ? "运行耗时" : "平均到达耗时", unit: "s", digits: native ? 3 : 2,
+        subtitle: native ? "运行从出发到结束所用的仿真时间。" : "从出发到进入目标范围所用的仿真时间。" },
       length: { key: "mean_path", title: native ? "实际行程" : "平均实际行程", unit: "m", digits: 3,
         subtitle: "沿机器人实际走过的轨迹计算距离。" }
     };
@@ -581,7 +610,7 @@
     rows.forEach((row) => {
       const wrapper = element("div", "metric-row" + (row.method === "voronoi_qp" ? " featured" : ""));
       const heading = element("div", "bar-label", label(row.method, local));
-      const value = element("span", "bar-value", fixed(row[metric.key], metric.digits) + " " + metric.unit);
+      const value = element("span", "bar-value", measured(row[metric.key], metric.unit, metric.digits));
       const track = element("div", "bar-track");
       track.setAttribute("aria-hidden", "true");
       const fill = element("div", "bar-fill");
@@ -602,40 +631,81 @@
     renderResults();
     setRecordMethods();
   }
-  tabs.forEach((button, index) => {
+  tabs.forEach((button) => {
     button.addEventListener("click", () => chooseGroup(button));
     button.addEventListener("keydown", (event) => {
+      const visible = tabs.filter((tab) => !tab.hidden);
+      const index = visible.indexOf(button);
       let next = index;
-      if (event.key === "ArrowRight") next = (index + 1) % tabs.length;
-      else if (event.key === "ArrowLeft") next = (index + tabs.length - 1) % tabs.length;
+      if (event.key === "ArrowRight") next = (index + 1) % visible.length;
+      else if (event.key === "ArrowLeft") next = (index + visible.length - 1) % visible.length;
       else if (event.key === "Home") next = 0;
-      else if (event.key === "End") next = tabs.length - 1;
+      else if (event.key === "End") next = visible.length - 1;
       else return;
-      event.preventDefault(); tabs[next].focus(); chooseGroup(tabs[next]);
+      event.preventDefault(); visible[next].focus(); chooseGroup(visible[next]);
     });
   });
   $("metric-select").addEventListener("change", (event) => {
     state.metric = event.target.value; renderResults();
   });
 
-  const baseline = summaryById.get("voronoi");
-  const featured = summaryById.get("voronoi_qp");
-  function percentage(id, number) {
-    $(id).textContent = (number >= 0 ? "+" : "−") + fixed(Math.abs(number), 1) + "%";
+  function renderSmoothing() {
+    const baseline = summary("voronoi");
+    const featured = summary("voronoi_qp");
+    const rawPath = run("voronoi").initial_path;
+    const smoothPath = run("voronoi_qp").initial_path;
+    const drawing = planView(scene(), [
+      {path: smoothPath, style: "plan-smooth-path"},
+      {path: rawPath, style: "plan-raw-path"}
+    ]);
+    $("smoothing-map").replaceChildren(drawing);
+    $("smoothing-caption").textContent = scene().label + "，种子 " + state.seed + " 的初始规划路线。";
+    $("comparison-map").textContent = scene().label + "，Dev1ce's method 相对 Voronoi 的平均变化";
+    for (const [id, metric] of [["clearance-gain", "mean_clearance"], ["curvature-gain", "mean_curvature"], ["accel-gain", "mean_angular_accel"]]) {
+      const base = baseline[metric], smooth = featured[metric];
+      const change = Number.isFinite(base) && Number.isFinite(smooth) && base > 0 ? (smooth / base - 1) * 100 : null;
+      $(id).textContent = change === null ? "—" : (change > 0 ? "+" : change < 0 ? "−" : "") + fixed(Math.abs(change), 1) + "%";
+    }
   }
-  percentage("clearance-gain", (featured.mean_clearance / baseline.mean_clearance - 1) * 100);
-  percentage("curvature-gain", (featured.mean_curvature / baseline.mean_curvature - 1) * 100);
-  percentage("accel-gain", (featured.mean_angular_accel / baseline.mean_angular_accel - 1) * 100);
-  $("extra-time").textContent = fixed(featured.mean_time - baseline.mean_time, 2) + " s";
-  $("extra-distance").textContent = fixed(featured.mean_path - baseline.mean_path, 3) + " m";
+
+  function selectScene(id, initial = false) {
+    state.scene = id;
+    state.time = 0;
+    if (!initial) requestPlayback(false);
+    const map = scene();
+    $("result-scene").value = id;
+    for (const button of $("scene-options").children) {
+      button.setAttribute("aria-pressed", String(button.dataset.scene === id));
+    }
+    $("scene-description").textContent = map.description;
+    $("scene-source").textContent = map.source_label;
+    $("scene-source").href = map.source;
+    $("map-caption").textContent = map.label + " · 二维回放";
+    $("world-file").textContent = "worlds/" + id + ".wbt";
+    const nativeTab = $("tab-webots");
+    nativeTab.hidden = !data.webots?.runs.some((row) => row.scene === id);
+    const currentTab = tabs.find((tab) => tab.dataset.group === state.group && !tab.hidden);
+    chooseGroup(currentTab || tabs[0]);
+    chooseRun();
+    renderSmoothing();
+  }
+  data.scenes.forEach((map) => {
+    const button = element("button");
+    button.type = "button";
+    button.dataset.scene = map.id;
+    button.append(planView(map), element("span", "", map.label));
+    button.addEventListener("click", () => selectScene(map.id));
+    $("scene-options").append(button);
+    $("result-scene").add(new Option(map.label, map.id));
+  });
+  $("result-scene").addEventListener("change", (event) => selectScene(event.target.value));
 
   resizeCanvas();
-  chooseRun();
-  chooseGroup(tabs[0]);
+  selectScene(state.scene, true);
   if (window.ResizeObserver) new ResizeObserver(resizeCanvas).observe(canvas.parentElement);
   else window.addEventListener("resize", resizeCanvas);
   if (!ctx) {
     $("data-error").hidden = false;
-    $("data-error").textContent = "当前浏览器用静态图显示种子 0 的六条路线。";
+    $("data-error").textContent = "当前浏览器用静态图显示三张地图，小车和机器人的完整轨迹可在下方录像中对照。";
   }
 }());

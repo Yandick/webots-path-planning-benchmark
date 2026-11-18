@@ -1,0 +1,79 @@
+{
+  "turtlebot3_stage2": {
+    "label": "四柱场地",
+    "description": "机器人从左下角出发，绕过四根固定圆柱。小车从场地中央横穿。",
+    "source_label": "ROBOTIS · TurtleBot3 Stage 2",
+    "source": "https://github.com/ROBOTIS-GIT/turtlebot3_simulations/tree/a35a56c8b04877dc89772b598084d8ce648a9023/turtlebot3_gazebo/models/turtlebot3_dqn_world",
+    "bounds": [-2.5, 2.5, -2.5, 2.5],
+    "boxes": [
+      [-2.425, 0.0, 0.15, 5.0],
+      [0.0, 2.425, 5.0, 0.15],
+      [2.425, 0.0, 0.15, 5.0],
+      [0.0, -2.425, 5.0, 0.15]
+    ],
+    "cylinders": [
+      [-1.0, -1.0, 0.15],
+      [-1.0, 1.0, 0.15],
+      [1.0, -1.0, 0.15],
+      [1.0, 1.0, 0.15]
+    ],
+    "start": [-1.8, -1.15],
+    "goal": [1.8, 1.15],
+    "cart": {
+      "radius": 0.19,
+      "waypoints": [
+        [0, 0, -0.85],
+        [1.3, 0, -0.85],
+        [5.6, 0, 0.06],
+        [7.9, 0, 0.06],
+        [16.7, 0, 1.55],
+        [100, 0, 1.55]
+      ]
+    }
+  },
+  "pointmaze_u": {
+    "label": "U 形走廊",
+    "description": "起点和终点隔着一堵墙。机器人要沿右侧走廊折返，途中小车横过下方通道。",
+    "source_label": "Farama · PointMaze U-Maze",
+    "source": "https://github.com/Farama-Foundation/Gymnasium-Robotics/blob/91f8a92916a0ca0c6032549c9964d8f4b0f68450/gymnasium_robotics/envs/maze/maps.py#L48-L54",
+    "layout": "U_MAZE",
+    "grid": ["11111", "10001", "11101", "10001", "11111"],
+    "cell_size": 1.4,
+    "start": [-1.4, -1.4],
+    "goal": [-1.4, 1.4],
+    "cart": {
+      "radius": 0.15,
+      "waypoints": [
+        [0, 0.4, -1.88],
+        [1.3, 0.4, -1.88],
+        [7.7, 0.4, -0.92],
+        [22, 0.4, -0.92],
+        [29, 0.4, -1.88],
+        [100, 0.4, -1.88]
+      ]
+    }
+  },
+  "pointmaze_medium": {
+    "label": "岔路迷宫",
+    "description": "机器人从左下方开往右上方。中间的岔路可以走不同方向，一辆小车沿横向通道往返。",
+    "source_label": "Farama · PointMaze Medium",
+    "source": "https://github.com/Farama-Foundation/Gymnasium-Robotics/blob/91f8a92916a0ca0c6032549c9964d8f4b0f68450/gymnasium_robotics/envs/maze/maps.py#L56-L65",
+    "layout": "MEDIUM_MAZE",
+    "grid": ["11111111", "10011001", "10010001", "11000111", "10010001", "10100101", "10001001", "11111111"],
+    "cell_size": 1.4,
+    "start": [-3.5, -3.5],
+    "goal": [2.1, 2.1],
+    "cart": {
+      "radius": 0.18,
+      "waypoints": [
+        [0, -1.85, 0.7],
+        [6, -1.85, 0.7],
+        [17, 0.55, 0.7],
+        [20.5, 1.12, 0.7],
+        [32, 1.12, 0.7],
+        [47, -1.85, 0.7],
+        [100, -1.85, 0.7]
+      ]
+    }
+  }
+}

@@ -1,30 +1,4 @@
-"""Build the project homepage from the checked-in experiment archives.
-
-Run ``python scripts/build_site.py`` to copy ``site/`` and selected research
-assets into ``dist/``. No simulation is run and no source result is rewritten.
-Copied HTML receives content-hashed query strings on local CSS, application JS
-and generated data references so new deployments do not reuse stale assets.
-
-``data.js`` assigns ``window.BENCHMARK_DATA`` with the following schema:
-
-* methods: [{id, label, group}], using stable experiment IDs and current labels;
-* scene: {bounds, start, goal, robot_radius, static: [{center, size}]};
-* seeds and moving: per-seed scripted cart {name, radius, waypoints} schedules;
-* runs: [{method, seed, status, finish_time, path_length, min_clearance,
-  replan_count, trajectory: [[t, x, y, theta, clearance]], initial_path,
-  route_updates: [{t, path}]}]; every recorded trajectory sample is retained;
-* summary: [{method, n, success, collision, timeout, mean_time, mean_path,
-  mean_clearance, mean_curvature, mean_angular_accel, mean_replans}]; time,
-  path length and replans average successful runs only, other metrics all runs;
-* webots: {version, source_commit, ci_url, seed, runs}; these are archived native
-  validation results, not a claim that this website build reran Webots;
-* sources: source paths, archive checksum, source commit and metric definitions.
-
-Coordinates and times are rounded to six decimal places for the browser;
-downloadable archives remain byte-for-byte copies of the originals. An absent
-metric is null, never a fabricated zero. The build rejects missing, duplicate,
-inconsistent or non-finite research data rather than publishing a partial set.
-"""
+"""Build the GitHub Pages replay from verified per-map 2D and Webots archives."""
 
 from __future__ import annotations
 
@@ -43,16 +17,15 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from navigation.scenarios import make_scene
+from navigation.scenarios import MAP_FILE, SCENES, SCENE_INFO, make_scene
 from navigation.settings import METHOD_LABELS
 
 
 RESULT_ASSETS = (
-    "benchmark.png", "collision_case.png", "manifest.json", "map.png",
-    "raw_runs.json.gz", "safety_smoothness.png", "smoothing_ablation.json.gz",
-    "summary.csv", "voronoi_smoothing.png", "warehouse.mp4", "warehouse.png",
-    "webots_raw_runs.json.gz", "webots_scene.png", "webots_validation.json",
+    "benchmark.png", "manifest.json", "map.png", "raw_runs.json.gz",
+    "smoothing_ablation.json.gz", "summary.csv", "course_maps.mp4", "trajectories.png",
 )
+NATIVE_ASSETS = ("webots_validation.json", "webots_raw_runs.json.gz")
 
 CSV_NUMERIC_FIELDS = (
     "finish_time", "actual_path_length", "min_surface_clearance",
@@ -109,21 +82,27 @@ def _validate_sources(archive, rows, manifest, archive_path):
         raise ValueError("Duplicate method or seed in manifest")
     if set(methods) != set(METHOD_LABELS):
         raise ValueError("Manifest methods do not match the configured methods")
-    expected = {(method, seed) for seed in seeds for method in methods}
+    names = manifest["scenes"]
+    if set(names) != set(SCENES) or len(names) != len(SCENES):
+        raise ValueError("Manifest scenes do not match the course maps")
+    map_hash = hashlib.sha256(MAP_FILE.read_bytes().replace(b"\r\n", b"\n")).hexdigest()
+    if map_hash != manifest["map_definitions_sha256"]:
+        raise ValueError("Map definitions differ from the benchmark manifest")
+    expected = {(name, method, seed) for name in names for seed in seeds for method in methods}
     if set(archive) != set(manifest["runs"]):
         raise ValueError("Archive filenames do not match the manifest")
 
     indexed = {}
-    scenes = {seed: make_scene(manifest["scene"], seed) for seed in seeds}
+    scenes = {(name, seed): make_scene(name, seed) for name in names for seed in seeds}
     for filename, run in archive.items():
-        key = (run["algorithm"], run["seed"])
+        key = (run["scene"], run["algorithm"], run["seed"])
         if key not in expected or key in indexed:
             raise ValueError(f"Unexpected or duplicate archived run: {key}")
-        if run["scene_sha256"] != scenes[run["seed"]].signature():
+        if run["scene_sha256"] != scenes[run["scene"], run["seed"]].signature():
             raise ValueError(f"Scene geometry/schedule differs from archived run: {filename}")
-        if run["backend"] != "kinematic_2d" or run["scene"] != manifest["scene"]:
+        if run["backend"] != "kinematic_2d":
             raise ValueError(f"Unexpected backend or scene: {filename}")
-        if run["status"] not in ("success", "collision", "timeout"):
+        if run["status"] not in ("success", "collision", "timeout", "planning_failed"):
             raise ValueError(f"Unknown run status: {filename}")
         trajectory = run["trajectory"]
         if not trajectory:
@@ -141,7 +120,7 @@ def _validate_sources(archive, rows, manifest, archive_path):
 
     csv_keys = set()
     for row in rows:
-        key = (row["algorithm"], int(row["seed"]))
+        key = (row["scene"], row["algorithm"], int(row["seed"]))
         if key not in indexed or key in csv_keys:
             raise ValueError(f"Unexpected or duplicate CSV run: {key}")
         csv_keys.add(key)
@@ -166,83 +145,96 @@ def _validate_sources(archive, rows, manifest, archive_path):
     return indexed, scenes, actual_hash
 
 
+def export_webots(results, names, methods):
+    native = results / NATIVE_ASSETS[0]
+    raw = results / NATIVE_ASSETS[1]
+    if not native.exists() and not raw.exists():
+        return None
+    data = _read_json(native)
+    _finite_json(data, "webots")
+    if hashlib.sha256(raw.read_bytes()).hexdigest() != data["raw_runs_sha256"]:
+        raise ValueError("Native archive checksum differs from validation record")
+    archive = _read_json(raw)
+    seed = data["seed"]
+    expected = {(name, method) for name in names for method in methods}
+    runs = []
+    for run in data["runs"]:
+        name, method = run["scene"], run["algorithm"]
+        if (name, method) not in expected or run["seed"] != seed:
+            raise ValueError("Unexpected or duplicate native map/method/seed")
+        expected.remove((name, method))
+        if run["scene_sha256"] != make_scene(name, seed).signature():
+            raise ValueError("Native scene differs from the replay map")
+        recorded = archive.pop(run["raw_run"], None)
+        fields = ("scene", "scene_sha256", "seed", "algorithm", "status", "finish_time",
+                  "actual_path_length", "min_surface_clearance", "replan_count", "replan_attempt_count")
+        if recorded is None or any(run[key] != recorded[key] for key in fields):
+            raise ValueError("Native summary differs from its recorded run")
+        runs.append({
+            "scene": name, "method": method, "seed": seed, "status": run["status"],
+            "finish_time": run["finish_time"], "path_length": run["actual_path_length"],
+            "min_clearance": run["min_surface_clearance"], "replan_count": run["replan_count"],
+            "replan_attempt_count": run["replan_attempt_count"],
+        })
+    if expected or archive:
+        raise ValueError("Native archive and summary do not cover the same map/method runs")
+    return {"version": data["webots_version"], "source_commit": data.get("source_commit"),
+            "ci_url": data.get("ci_url"), "seed": seed, "runs": runs}
+
+
 def create_payload(root: Path = ROOT):
-    """Return verified browser data without changing any input files."""
-    root = Path(root)
-    results = root / "results"
+    """Return browser data for every map, preserving samples and route changes."""
+    results = Path(root) / "results"
     archive_path = results / "raw_runs.json.gz"
     archive = _read_json(archive_path)
     manifest = _read_json(results / "manifest.json")
-    webots = _read_json(results / "webots_validation.json")
     with (results / "summary.csv").open(encoding="utf-8", newline="") as stream:
         rows = list(csv.DictReader(stream))
     indexed, scenes, archive_hash = _validate_sources(archive, rows, manifest, archive_path)
-    _finite_json(webots, "webots")
-    methods, seeds = manifest["methods"], manifest["seeds"]
-    scene = scenes[seeds[0]]
-    if any(obstacle.kind != "box" for obstacle in scene.static):
-        raise ValueError("The website scene exporter currently supports box obstacles")
-    runs = []
-    for seed in seeds:
-        for method in methods:
-            run = indexed[(method, seed)]
-            runs.append({
-                "method": method, "seed": seed, "status": run["status"],
-                "finish_time": run["finish_time"],
-                "path_length": run["actual_path_length"],
-                "min_clearance": run["min_surface_clearance"],
-                "replan_count": run["replan_count"],
-                "trajectory": [[p[key] for key in ("t", "x", "y", "theta", "clearance")]
-                               for p in run["trajectory"]],
-                "initial_path": run["initial_path"],
-                "route_updates": [{"t": update["t"], "path": update["path"]}
-                                  for update in run["route_updates"]],
-            })
-    summaries = []
-    for method in methods:
-        selected = [indexed[(method, seed)] for seed in seeds]
-        successes = [run for run in selected if run["status"] == "success"]
-        summaries.append({
-            "method": method, "n": len(selected), "success": len(successes),
-            "collision": sum(run["status"] == "collision" for run in selected),
-            "timeout": sum(run["status"] == "timeout" for run in selected),
-            "mean_time": _mean(successes, "finish_time"),
-            "mean_path": _mean(successes, "actual_path_length"),
-            "mean_clearance": _mean(selected, "min_surface_clearance"),
-            "mean_curvature": _mean(selected, "planned_peak_curvature"),
-            "mean_angular_accel": _mean(selected, "moving_angular_accel_rms"),
-            "mean_replans": _mean(successes, "replan_count"),
-        })
-    native_runs = [{
-        "method": run["algorithm"], "seed": run["seed"], "status": run["status"],
-        "finish_time": run["finish_time"], "path_length": run["actual_path_length"],
-        "min_clearance": run["min_surface_clearance"],
-        "replan_count": run["replan_count"],
-        "replan_attempt_count": run["replan_attempt_count"],
-    } for run in webots["runs"]]
-    if {run["method"] for run in native_runs} != set(methods):
-        raise ValueError("Native Webots validation methods differ from the benchmark")
-    payload = {
-        "schema_version": 1,
-        "methods": [{"id": method, "label": METHOD_LABELS[method],
-                     "group": "local" if method in ("apf", "dwa") else "global"}
-                    for method in methods],
-        "scene": {
-            "bounds": [-5, 5, -5, 5], "start": scene.start, "goal": scene.goal,
+    names, methods, seeds = manifest["scenes"], manifest["methods"], manifest["seeds"]
+    maps, runs, summaries = [], [], []
+    for name in names:
+        scene = scenes[name, seeds[0]]
+        info = SCENE_INFO[name]
+        maps.append({
+            "id": name, **{k: info[k] for k in ("label", "description", "source", "source_label")},
+            "bounds": scene.bounds, "start": scene.start, "goal": scene.goal,
             "robot_radius": manifest["config"]["radius"],
-            "static": [{"center": obstacle.params["center"],
-                        "size": obstacle.params["size"]} for obstacle in scene.static],
-        },
-        "seeds": seeds,
-        "moving": {str(seed): [vars(cart) for cart in scenes[seed].moving] for seed in seeds},
-        "runs": runs, "summary": summaries,
-        "webots": {"version": webots["webots_version"],
-                   "source_commit": webots["source_commit"], "ci_url": webots["ci_url"],
-                   "seed": webots["seed"], "runs": native_runs},
+            "static": [{"kind": obs.kind, **obs.params} for obs in scene.static],
+            "moving": {str(seed): [vars(cart) for cart in scenes[name, seed].moving] for seed in seeds},
+        })
+        for method in methods:
+            selected = [indexed[name, method, seed] for seed in seeds]
+            successes = [run for run in selected if run["status"] == "success"]
+            summaries.append({
+                "scene": name, "method": method, "n": len(selected), "success": len(successes),
+                **{state: sum(run["status"] == state for run in selected)
+                   for state in ("collision", "timeout", "planning_failed")},
+                "mean_time": _mean(successes, "finish_time"),
+                "mean_path": _mean(successes, "actual_path_length"),
+                "mean_clearance": _mean(selected, "min_surface_clearance"),
+                "mean_curvature": _mean(selected, "planned_peak_curvature"),
+                "mean_angular_accel": _mean(selected, "moving_angular_accel_rms"),
+                "mean_replans": _mean(successes, "replan_count"),
+            })
+            for run in selected:
+                runs.append({
+                    "scene": name, "method": method, "seed": run["seed"], "status": run["status"],
+                    "finish_time": run["finish_time"], "path_length": run["actual_path_length"],
+                    "min_clearance": run["min_surface_clearance"], "replan_count": run["replan_count"],
+                    "trajectory": [[p[k] for k in ("t", "x", "y", "theta", "clearance")] for p in run["trajectory"]],
+                    "initial_path": run["initial_path"],
+                    "route_updates": [{"t": item["t"], "path": item["path"]} for item in run["route_updates"]],
+                })
+    payload = {
+        "schema_version": 2,
+        "methods": [{"id": method, "label": METHOD_LABELS[method],
+                     "group": "local" if method in ("apf", "dwa") else "global"} for method in methods],
+        "scenes": maps, "seeds": seeds, "runs": runs, "summary": summaries,
+        "webots": export_webots(results, names, methods),
         "sources": {
             "archive": "results/raw_runs.json.gz", "summary": "results/summary.csv",
             "manifest": "results/manifest.json", "raw_runs_sha256": archive_hash,
-            "source_commit": manifest.get("source_commit"),
             "trajectory_columns": ["t_s", "x_m", "y_m", "theta_rad", "clearance_m"],
             "successful_runs_only": ["mean_time", "mean_path", "mean_replans"],
             "all_runs": ["mean_clearance", "mean_curvature", "mean_angular_accel"],
@@ -287,7 +279,8 @@ def build(root: Path = ROOT, output_dir: Path | None = None):
     if not (source / "index.html").is_file():
         raise FileNotFoundError("site/index.html is required before building the homepage")
     payload = create_payload(root)
-    assets = [root / "results" / name for name in RESULT_ASSETS]
+    names = RESULT_ASSETS + (NATIVE_ASSETS if payload["webots"] else ())
+    assets = [root / "results" / name for name in names]
     for asset in assets:
         if not asset.is_file():
             raise FileNotFoundError(f"Missing downloadable result asset: {asset.name}")

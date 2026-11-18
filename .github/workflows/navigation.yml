@@ -35,10 +35,14 @@ jobs:
           apt-get update -qq
           apt-get install -y python3-pip xvfb xauth
           python3 -m pip install -r requirements.txt
-      - name: Run five classical baselines and the improved method
+      - name: Run all six methods on every course map
         run: python3 evaluation/webots_benchmark.py --timeout 360
-      - name: Validate native geometry, dynamic replanning and controller inputs
-        run: python3 evaluation/check_webots_smoke.py
+      - name: Validate native sensors and export the seed-0 comparison
+        run: python3 evaluation/check_webots_smoke.py --export results/webots-course
+      - uses: actions/upload-artifact@v4
+        with:
+          name: webots-course-results
+          path: results/webots-course/
       - uses: actions/upload-artifact@v4
         if: always()
         with:

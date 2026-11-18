@@ -4,47 +4,39 @@
 
 WorldInfo { basicTimeStep 32 coordinateSystem "ENU" randomSeed 1 }
 
-Viewpoint { orientation 0 1 0 1.57079632679 position 0 0 13 }
+Viewpoint { orientation 0 1 0 1.57079632679 position 0 0 9.45 }
 
 Background { skyColor [0.86 0.91 0.97] }
 
 DirectionalLight { direction 0.3 0.3 -1 intensity 1 castShadows TRUE }
 
-Solid { translation 0 0 -0.05 children [ Shape { appearance PBRAppearance { baseColor 0.9 0.9 0.9 roughness 1 } geometry Box { size 10.2 10.2 .1 } } ] boundingObject Box { size 10.2 10.2 .1 } }
+Solid { translation 0 0 -0.05 children [ Shape { appearance PBRAppearance { baseColor 0.9 0.9 0.9 roughness 1 } geometry Box { size 7 7 .1 } } ] boundingObject Box { size 7 7 .1 } }
 
-DEF STATIC_0 Solid { translation 0 5 .4 name "static_0" children [ Shape { appearance PBRAppearance { baseColor .3 .4 .55 roughness 1 } geometry Box { size 10.2 0.2 .8 } } ] boundingObject Box { size 10.2 0.2 .8 } }
+DEF STATIC_0 Solid { translation 0.0 2.8 .4 name "static_0" children [ Shape { appearance PBRAppearance { baseColor .3 .4 .55 roughness 1 } geometry Box { size 7.0 1.4 .8 } } ] boundingObject Box { size 7.0 1.4 .8 } }
 
-DEF STATIC_1 Solid { translation 0 -5 .4 name "static_1" children [ Shape { appearance PBRAppearance { baseColor .3 .4 .55 roughness 1 } geometry Box { size 10.2 0.2 .8 } } ] boundingObject Box { size 10.2 0.2 .8 } }
+DEF STATIC_1 Solid { translation -2.8 1.4000000000000004 .4 name "static_1" children [ Shape { appearance PBRAppearance { baseColor .3 .4 .55 roughness 1 } geometry Box { size 1.4 1.4 .8 } } ] boundingObject Box { size 1.4 1.4 .8 } }
 
-DEF STATIC_2 Solid { translation 5 0 .4 name "static_2" children [ Shape { appearance PBRAppearance { baseColor .3 .4 .55 roughness 1 } geometry Box { size 0.2 10.2 .8 } } ] boundingObject Box { size 0.2 10.2 .8 } }
+DEF STATIC_2 Solid { translation 2.8 1.4000000000000004 .4 name "static_2" children [ Shape { appearance PBRAppearance { baseColor .3 .4 .55 roughness 1 } geometry Box { size 1.4 1.4 .8 } } ] boundingObject Box { size 1.4 1.4 .8 } }
 
-DEF STATIC_3 Solid { translation -5 0 .4 name "static_3" children [ Shape { appearance PBRAppearance { baseColor .3 .4 .55 roughness 1 } geometry Box { size 0.2 10.2 .8 } } ] boundingObject Box { size 0.2 10.2 .8 } }
+DEF STATIC_3 Solid { translation -1.4000000000000004 0.0 .4 name "static_3" children [ Shape { appearance PBRAppearance { baseColor .3 .4 .55 roughness 1 } geometry Box { size 4.199999999999999 1.4 .8 } } ] boundingObject Box { size 4.199999999999999 1.4 .8 } }
 
-DEF STATIC_4 Solid { translation 0 -2.8 .4 name "static_4" children [ Shape { appearance PBRAppearance { baseColor .3 .4 .55 roughness 1 } geometry Box { size 0.6 4.2 .8 } } ] boundingObject Box { size 0.6 4.2 .8 } }
+DEF STATIC_4 Solid { translation 2.8 0.0 .4 name "static_4" children [ Shape { appearance PBRAppearance { baseColor .3 .4 .55 roughness 1 } geometry Box { size 1.4 1.4 .8 } } ] boundingObject Box { size 1.4 1.4 .8 } }
 
-DEF STATIC_5 Solid { translation 0 1.45 .4 name "static_5" children [ Shape { appearance PBRAppearance { baseColor .3 .4 .55 roughness 1 } geometry Box { size 0.6 1.5 .8 } } ] boundingObject Box { size 0.6 1.5 .8 } }
+DEF STATIC_5 Solid { translation -2.8 -1.3999999999999995 .4 name "static_5" children [ Shape { appearance PBRAppearance { baseColor .3 .4 .55 roughness 1 } geometry Box { size 1.4 1.4 .8 } } ] boundingObject Box { size 1.4 1.4 .8 } }
 
-DEF STATIC_6 Solid { translation -2.65 -1.9 .4 name "static_6" children [ Shape { appearance PBRAppearance { baseColor .3 .4 .55 roughness 1 } geometry Box { size 2.5 0.65 .8 } } ] boundingObject Box { size 2.5 0.65 .8 } }
+DEF STATIC_6 Solid { translation 2.8 -1.3999999999999995 .4 name "static_6" children [ Shape { appearance PBRAppearance { baseColor .3 .4 .55 roughness 1 } geometry Box { size 1.4 1.4 .8 } } ] boundingObject Box { size 1.4 1.4 .8 } }
 
-DEF STATIC_7 Solid { translation -3.1 1.3 .4 name "static_7" children [ Shape { appearance PBRAppearance { baseColor .3 .4 .55 roughness 1 } geometry Box { size 1.6 1.8 .8 } } ] boundingObject Box { size 1.6 1.8 .8 } }
+DEF STATIC_7 Solid { translation 0.0 -2.8 .4 name "static_7" children [ Shape { appearance PBRAppearance { baseColor .3 .4 .55 roughness 1 } geometry Box { size 7.0 1.4 .8 } } ] boundingObject Box { size 7.0 1.4 .8 } }
 
-DEF STATIC_8 Solid { translation -1.8 3.65 .4 name "static_8" children [ Shape { appearance PBRAppearance { baseColor .3 .4 .55 roughness 1 } geometry Box { size 2.0 0.6 .8 } } ] boundingObject Box { size 2.0 0.6 .8 } }
+DEF MOVING_0 Solid { translation 0.4 -1.88 .35 name "cart_0" children [ Shape { appearance PBRAppearance { baseColor .95 .25 .12 roughness 1 } geometry Cylinder { radius 0.15 height .7 } } ] boundingObject Cylinder { radius 0.15 height .7 } }
 
-DEF STATIC_9 Solid { translation 2.2 1.7 .4 name "static_9" children [ Shape { appearance PBRAppearance { baseColor .3 .4 .55 roughness 1 } geometry Box { size 2.0 0.7 .8 } } ] boundingObject Box { size 2.0 0.7 .8 } }
+Solid { translation -1.4 -1.4 .005 name "start" children [ Shape { appearance PBRAppearance { baseColor .1 .8 .2 } geometry Cylinder { radius .25 height .01 } } ] }
 
-DEF STATIC_10 Solid { translation 3.3 -1.8 .4 name "static_10" children [ Shape { appearance PBRAppearance { baseColor .3 .4 .55 roughness 1 } geometry Box { size 1.6 2.0 .8 } } ] boundingObject Box { size 1.6 2.0 .8 } }
-
-DEF MOVING_0 Solid { translation 1.4 -2.0 .35 name "cart_0" children [ Shape { appearance PBRAppearance { baseColor .95 .25 .12 roughness 1 } geometry Cylinder { radius 0.48 height .7 } } ] boundingObject Cylinder { radius 0.48 height .7 } }
-
-DEF MOVING_1 Solid { translation 3.9 4.1 .35 name "cart_1" children [ Shape { appearance PBRAppearance { baseColor .95 .25 .12 roughness 1 } geometry Cylinder { radius 0.3 height .7 } } ] boundingObject Cylinder { radius 0.3 height .7 } }
-
-Solid { translation -4.0 -3.5 .005 name "start" children [ Shape { appearance PBRAppearance { baseColor .1 .8 .2 } geometry Cylinder { radius .25 height .01 } } ] }
-
-Solid { translation 4.0 3.5 .005 name "goal" children [ Shape { appearance PBRAppearance { baseColor .9 .15 .15 } geometry Cylinder { radius .25 height .01 } } ] }
+Solid { translation -1.4 1.4 .005 name "goal" children [ Shape { appearance PBRAppearance { baseColor .9 .15 .15 } geometry Cylinder { radius .25 height .01 } } ] }
 
 DEF ROBOT Robot {
-  translation -4.0 -3.5 0.05
-  rotation 0 0 1 0.7188299996216245
+  translation -1.4 -1.4 0.05
+  rotation 0 0 1 1.5707963267948966
   children [
     # Chassis
     Transform {
@@ -242,11 +234,11 @@ DEF ROBOT Robot {
     density -1
     mass 3.0
   }
-  customData "{\"scene\": \"warehouse\", \"seed\": 0}"
+  customData "{\"scene\": \"pointmaze_u\", \"seed\": 0}"
   name "robot"
   controller "coursework_navigator"
 }
 
 
 
-DEF SUPERVISOR Robot { name "supervisor" controller "coursework_supervisor" supervisor TRUE customData "{\"scene\": \"warehouse\", \"seed\": 0}" }
+DEF SUPERVISOR Robot { name "supervisor" controller "coursework_supervisor" supervisor TRUE customData "{\"scene\": \"pointmaze_u\", \"seed\": 0}" }

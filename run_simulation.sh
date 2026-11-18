@@ -6,7 +6,13 @@ if [ "$#" -ge 1 ]; then
   export PLANNER_ALGO="$1"
 fi
 export BENCHMARK_MODE=0
-if [ -z "${DISPLAY:-}" ]; then
-  exec bash "$SCRIPT_DIR/scripts/webots_headless.sh" "$SCRIPT_DIR/worlds/warehouse.wbt"
+SCENE_NAME="${2:-${PLANNER_SCENE:-turtlebot3_stage2}}"
+WORLD="$SCRIPT_DIR/worlds/$SCENE_NAME.wbt"
+if [[ ! "$SCENE_NAME" =~ ^[a-zA-Z0-9_]+$ || ! -f "$WORLD" ]]; then
+  printf 'Unknown map: %s\n' "$SCENE_NAME" >&2
+  exit 2
 fi
-exec "${WEBOTS_BINARY:-webots}" "$SCRIPT_DIR/worlds/warehouse.wbt"
+if [ -z "${DISPLAY:-}" ]; then
+  exec bash "$SCRIPT_DIR/scripts/webots_headless.sh" "$WORLD"
+fi
+exec "${WEBOTS_BINARY:-webots}" "$WORLD"

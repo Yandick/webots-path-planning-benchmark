@@ -12,9 +12,9 @@ import statistics
 import tempfile
 import unittest
 
-from navigation.scenarios import make_scene
+from navigation.scenarios import SCENES, make_scene
 from navigation.settings import METHOD_LABELS
-from scripts.build_site import ROOT, RESULT_ASSETS, build, create_payload
+from scripts.build_site import ROOT, NATIVE_ASSETS, RESULT_ASSETS, build, create_payload
 
 
 class SiteDataTests(unittest.TestCase):
@@ -23,28 +23,31 @@ class SiteDataTests(unittest.TestCase):
         cls.payload = create_payload()
         with gzip.open(ROOT / "results/raw_runs.json.gz", "rt", encoding="utf-8") as stream:
             cls.archive = json.load(stream)
-        cls.by_key = {(run["algorithm"], run["seed"]): run for run in cls.archive.values()}
+        cls.by_key = {(run["scene"], run["algorithm"], run["seed"]): run for run in cls.archive.values()}
 
     def test_aggregates_keep_collision_and_success_only_timing(self):
-        self.assertEqual(len(self.payload["runs"]), 30)
+        self.assertEqual(len(self.payload["runs"]), len(SCENES) * len(METHOD_LABELS) * 5)
         for summary in self.payload["summary"]:
-            selected = [run for (method, _), run in self.by_key.items()
-                        if method == summary["method"]]
+            selected = [run for (scene, method, _), run in self.by_key.items()
+                        if scene == summary["scene"] and method == summary["method"]]
             successes = [run for run in selected if run["status"] == "success"]
             self.assertEqual(summary["success"], len(successes))
             self.assertEqual(summary["collision"], sum(run["status"] == "collision" for run in selected))
-            self.assertAlmostEqual(summary["mean_time"],
-                                   statistics.fmean(run["finish_time"] for run in successes), places=5)
+            if successes:
+                self.assertAlmostEqual(summary["mean_time"],
+                                       statistics.fmean(run["finish_time"] for run in successes), places=5)
+            else:
+                self.assertIsNone(summary["mean_time"])
             self.assertAlmostEqual(summary["mean_clearance"],
                                    statistics.fmean(run["min_surface_clearance"] for run in selected), places=5)
-        astar = next(row for row in self.payload["summary"] if row["method"] == "astar")
-        self.assertEqual((astar["success"], astar["collision"]), (4, 1))
+            self.assertEqual(sum(summary[key] for key in ("success", "collision", "timeout", "planning_failed")),
+                             len(selected))
         self.assertEqual(next(row for row in self.payload["summary"]
                               if row["method"] == "apf")["mean_curvature"], None)
 
     def test_all_trajectory_samples_and_route_updates_are_preserved(self):
         for run in self.payload["runs"]:
-            source = self.by_key[(run["method"], run["seed"])]
+            source = self.by_key[(run["scene"], run["method"], run["seed"])]
             self.assertEqual(len(run["trajectory"]), len(source["trajectory"]))
             for exported, original in zip(run["trajectory"], source["trajectory"]):
                 self.assertEqual(exported, [round(original[key], 6)
@@ -53,32 +56,44 @@ class SiteDataTests(unittest.TestCase):
             self.assertEqual(run["status"], source["status"])
 
     def test_scene_and_dynamic_schedules_match_each_archived_seed(self):
-        static = make_scene().static
-        self.assertEqual(len(self.payload["scene"]["static"]), 11)
-        for exported, original in zip(self.payload["scene"]["static"], static):
-            self.assertEqual(exported["center"], list(original.params["center"]))
-            self.assertEqual(exported["size"], list(original.params["size"]))
-        for seed in self.payload["seeds"]:
-            scene = make_scene(seed=seed)
-            for exported, original in zip(self.payload["moving"][str(seed)], scene.moving):
-                self.assertEqual(exported["name"], original.name)
-                self.assertEqual(exported["radius"], original.radius)
-                self.assertEqual(exported["waypoints"],
-                                 [[round(value, 6) for value in row] for row in original.waypoints])
+        self.assertEqual([s["id"] for s in self.payload["scenes"]], list(SCENES))
+        for item in self.payload["scenes"]:
+            for seed in self.payload["seeds"]:
+                scene = make_scene(item["id"], seed)
+                self.assertEqual(item["bounds"], list(scene.bounds))
+                self.assertEqual(len(item["static"]), len(scene.static))
+                for exported, original in zip(item["static"], scene.static):
+                    self.assertEqual(exported["kind"], original.kind)
+                    for key, value in original.params.items():
+                        if isinstance(value, tuple):
+                            self.assertEqual(exported[key], [round(v, 6) for v in value])
+                        else:
+                            self.assertAlmostEqual(exported[key], value, places=6)
+                self.assertEqual(len(item["moving"][str(seed)]), len(scene.moving))
+                for exported, original in zip(item["moving"][str(seed)], scene.moving):
+                    self.assertEqual(exported["name"], original.name)
+                    self.assertEqual(exported["radius"], original.radius)
+                    self.assertEqual(exported["waypoints"],
+                                     [[round(v, 6) for v in row] for row in original.waypoints])
 
     def test_current_labels_keep_stable_method_ids(self):
         self.assertEqual({row["id"]: row["label"] for row in self.payload["methods"]}, METHOD_LABELS)
         self.assertEqual(next(row["label"] for row in self.payload["methods"]
                               if row["id"] == "voronoi_qp"), "Dev1ce's method")
-        self.assertEqual(len(self.payload["webots"]["runs"]), 6)
-        self.assertEqual({row["method"] for row in self.payload["webots"]["runs"]}, set(METHOD_LABELS))
+        if self.payload["webots"]:
+            runs = self.payload["webots"]["runs"]
+            self.assertEqual({(row["scene"], row["method"]) for row in runs},
+                             {(s, m) for s in SCENES for m in METHOD_LABELS})
         json.dumps(self.payload, allow_nan=False)
 
     def fixture(self, directory):
         root = Path(directory)
         (root / "results").mkdir()
-        for name in ("raw_runs.json.gz", "summary.csv", "manifest.json", "webots_validation.json"):
+        for name in ("raw_runs.json.gz", "summary.csv", "manifest.json"):
             shutil.copy2(ROOT / "results" / name, root / "results" / name)
+        if self.payload["webots"]:
+            for name in NATIVE_ASSETS:
+                shutil.copy2(ROOT / "results" / name, root / "results" / name)
         return root
 
     def test_inconsistent_csv_is_rejected(self):
@@ -110,9 +125,9 @@ class SiteDataTests(unittest.TestCase):
                 with gzip.open(raw, "wt", encoding="utf-8") as stream:
                     json.dump(archive, stream)
                 manifest_path = root / "results/manifest.json"
-                manifest = json.loads(manifest_path.read_text())
+                manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
                 manifest["raw_runs_sha256"] = hashlib.sha256(raw.read_bytes()).hexdigest()
-                manifest_path.write_text(json.dumps(manifest))
+                manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
                 with self.assertRaisesRegex(ValueError, message):
                     create_payload(root)
 
@@ -142,7 +157,7 @@ class SiteDataTests(unittest.TestCase):
             self.assertEqual((output / "keep.txt").read_text(), "Do not remove")
             self.assertFalse((source / "data.js").exists())
             self.assertTrue((output / ".nojekyll").is_file())
-            assignment = (output / "data.js").read_text().split("window.BENCHMARK_DATA = ", 1)[1]
+            assignment = (output / "data.js").read_text(encoding="utf-8").split("window.BENCHMARK_DATA = ", 1)[1]
             self.assertEqual(json.loads(assignment.rstrip().removesuffix(";")), payload)
             self.assertEqual(hashlib.sha256((output / "results/raw_runs.json.gz").read_bytes()).hexdigest(),
                              original_hash)

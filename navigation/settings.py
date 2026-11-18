@@ -24,9 +24,12 @@ NAVIGATION_PROTOCOL = {
     "local_controller_guide": "A* with the same dynamic observation layer and replan trigger",
     "shared_safety": "same speed, wheel, acceleration limits and scan-based braking",
     "inflation_escape": "checked connection and increasing-clearance motion at radius+0.03m; occupied cells are retained",
-    "development": "basic and warehouse diagnostic cases; reported runs use the same fixed configuration across seeds0..4",
+    "schedules": "one slow cart per public layout; intermediate waypoint times shift together by up to 0.6 s per seed; fixed robot configuration",
 }
 METHOD_REFERENCES = {
+    "voronoi": {"title": "Geometric Voronoi roadmap of sampled obstacle boundaries",
+                "implementation": "navigation/classical.py:voronoi_path",
+                "geometry": "scipy.spatial.Voronoi finite free-space ridges and line-of-sight simplification"},
     "astar": {"authors": "Hart, Nilsson, Raphael", "year": 1968,
               "title": "A Formal Basis for the Heuristic Determination of Minimum Cost Paths",
               "doi": "10.1109/TSSC.1968.300136", "implementation": "navigation/core.py:astar"},

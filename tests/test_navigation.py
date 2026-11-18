@@ -84,25 +84,35 @@ class NavigationTests(unittest.TestCase):
 
     def test_follower_lookahead_does_not_depend_on_waypoint_density(self):
         nav = Navigator(make_scene(), "voronoi")
-        nav.path = np.array([[-4., -3.5], [-4., -2.]])
-        coarse = nav.target(np.array([-4., -3.5]))
+        start = np.array(nav.scene.start)
+        nav.path = np.array([start, start + [0., 1.]])
+        coarse = nav.target(start)
         nav.path = resample_path(nav.path, .02)
-        self.assertTrue(np.allclose(nav.target(np.array([-4., -3.5])), coarse))
+        self.assertTrue(np.allclose(nav.target(start), coarse))
 
-    def test_one_map_has_turns_and_a_genuinely_blocked_short_route(self):
-        scene = make_scene()
-        self.assertEqual(SCENES, ("warehouse",))
-        path = astar(scene.grid(), scene.start, scene.goal)
-        self.assertGreaterEqual(len(path), 5)
-        self.assertFalse(scene.grid().is_line_collision_free(scene.start, scene.goal))
-        cart = scene.moving[0]
-        self.assertLess(np.linalg.norm(cart.position(30)), .01)
-        # The robot cannot fit beside the parked cart in the 1.4m passage.
-        self.assertLess(.7-cart.radius, 2*.18)
-        for actor in scene.moving:
-            points = np.asarray(actor.waypoints)
-            speeds = np.linalg.norm(np.diff(points[:, 1:], axis=0), axis=1)/np.diff(points[:, 0])
-            self.assertLessEqual(max(speeds), .4)
+    def test_public_courses_have_passable_turns_and_slow_moving_obstacles(self):
+        from navigation.scenarios import SCENE_INFO
+        self.assertEqual(set(SCENES), {"turtlebot3_stage2", "pointmaze_u", "pointmaze_medium"})
+        for name in SCENES:
+            scene = make_scene(name)
+            grid = scene.grid()
+            self.assertFalse(grid.is_line_collision_free(scene.start, scene.goal), name)
+            self.assertIsNotNone(astar(grid, scene.start, scene.goal), name)
+            self.assertTrue(scene.moving, name)
+            for actor in scene.moving:
+                points = np.asarray(actor.waypoints)
+                speeds = np.linalg.norm(np.diff(points[:, 1:], axis=0), axis=1)/np.diff(points[:, 0])
+                self.assertGreater(max(speeds), .05)
+                self.assertLessEqual(max(speeds), .4)
+            if "grid" in SCENE_INFO[name]:
+                spec = SCENE_INFO[name]
+                for r, row in enumerate(spec["grid"]):
+                    for c, cell in enumerate(row):
+                        xy = (scene.bounds[0] + (c+.5)*spec["cell_size"],
+                              scene.bounds[3] - (r+.5)*spec["cell_size"])
+                        self.assertEqual(grid.is_occupied(*grid.world_to_grid(*xy), use_inflation=False), cell == "1")
+            else:
+                self.assertEqual(sum(obs.kind == "cylinder" for obs in scene.static), 4)
 
     def test_rotation_can_recover_inside_comfort_margin(self):
         nav = Navigator(make_scene(), "dwa")
@@ -149,11 +159,13 @@ class NavigationTests(unittest.TestCase):
         self.assertGreater(v, 0.)
         self.assertLessEqual(abs(w), nav.cfg.angular_acceleration*.1+1e-9)
 
-    def test_global_planners_detour_before_long_blockage_ends(self):
+    def test_global_planners_detour_before_a_temporary_blockage_ends(self):
+        cart = MovingDisc("cart", .28, [[0, 0, -1], [3, 0, 0], [37, 0, 0], [40, 0, 1]])
+        scene = Scene("temporary_blockage", start=(-2.5, 0.), goal=(2.5, 0.), duration=40., moving=[cart])
         for method in ("astar", "rrt_star"):
-            result = run(make_scene(), method)
+            result = run(scene, method)
             self.assertEqual(result["status"], "success", method)
-            self.assertLess(result["finish_time"], 58.)
+            self.assertLess(result["finish_time"], 37.)
             self.assertGreater(result["replan_count"], 0)
 
     def test_controller_does_not_query_scripted_actor_states(self):
