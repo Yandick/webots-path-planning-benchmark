@@ -6,6 +6,7 @@ import gzip
 import hashlib
 import json
 from pathlib import Path
+import re
 import shutil
 import statistics
 import tempfile
@@ -122,7 +123,16 @@ class SiteDataTests(unittest.TestCase):
                 shutil.copy2(ROOT / "results" / name, root / "results" / name)
             source = root / "site"
             source.mkdir()
-            (source / "index.html").write_text("<!doctype html><title>Fixture</title>")
+            source_html = (
+                '<!doctype html><title>Fixture</title>'
+                '<link rel="stylesheet" href="style.css">'
+                "<script src='data.js' defer></script>"
+                '<script src="./app.js" defer></script>'
+                '<a href="https://example.com/app.js">External source</a>'
+            )
+            (source / "index.html").write_text(source_html)
+            (source / "style.css").write_text("body { color: green; }")
+            (source / "app.js").write_text("window.appVersion = 1;")
             output = root / "dist"
             output.mkdir()
             (output / "keep.txt").write_text("Do not remove")
@@ -136,6 +146,27 @@ class SiteDataTests(unittest.TestCase):
             self.assertEqual(json.loads(assignment.rstrip().removesuffix(";")), payload)
             self.assertEqual(hashlib.sha256((output / "results/raw_runs.json.gz").read_bytes()).hexdigest(),
                              original_hash)
+            def versions():
+                html = (output / "index.html").read_text()
+                return dict(re.findall(r"(style\.css|app\.js|data\.js)\?v=([0-9a-f]+)", html))
+
+            first_versions = versions()
+            self.assertEqual(set(first_versions), {"style.css", "app.js", "data.js"})
+            for asset, version in first_versions.items():
+                self.assertEqual(version, hashlib.sha256((output / asset).read_bytes()).hexdigest()[:12])
+            self.assertEqual((source / "index.html").read_text(), source_html)
+            self.assertIn('href="https://example.com/app.js"', (output / "index.html").read_text())
+
+            # A new application deployment must bypass cached JS without forcing
+            # unchanged styles or experiment data onto a different cache key.
+            (source / "app.js").write_text("window.appVersion = 2;")
+            build(root)
+            second_versions = versions()
+            self.assertNotEqual(first_versions["app.js"], second_versions["app.js"])
+            self.assertEqual(first_versions["style.css"], second_versions["style.css"])
+            self.assertEqual(first_versions["data.js"], second_versions["data.js"])
+            self.assertEqual((source / "index.html").read_text(), source_html)
+            self.assertEqual((output / "keep.txt").read_text(), "Do not remove")
             with self.assertRaisesRegex(ValueError, "must not overwrite source"):
                 build(root, source)
 

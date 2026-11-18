@@ -2,6 +2,8 @@
 
 Run ``python scripts/build_site.py`` to copy ``site/`` and selected research
 assets into ``dist/``. No simulation is run and no source result is rewritten.
+Copied HTML receives content-hashed query strings on local CSS, application JS
+and generated data references so new deployments do not reuse stale assets.
 
 ``data.js`` assigns ``window.BENCHMARK_DATA`` with the following schema:
 
@@ -33,6 +35,7 @@ import hashlib
 import json
 import math
 from pathlib import Path
+import re
 import shutil
 import statistics
 import sys
@@ -249,6 +252,28 @@ def create_payload(root: Path = ROOT):
     return _rounded(payload)
 
 
+def _version_asset_references(source: Path, output: Path):
+    """Version copied HTML assets by content, leaving source templates untouched."""
+    reference = re.compile(
+        r"(?P<attribute>(?<![\w:-])(?:href|src)\s*=\s*)"
+        r"(?P<quote>[\"'])(?P<asset>(?:\./)?(?:style\.css|app\.js|data\.js))(?P=quote)",
+        re.IGNORECASE,
+    )
+    fingerprints = {}
+    for source_html in source.rglob("*.html"):
+        built_html = output / source_html.relative_to(source)
+
+        def version(match):
+            asset = built_html.parent / match["asset"]
+            if asset not in fingerprints:
+                fingerprints[asset] = hashlib.sha256(asset.read_bytes()).hexdigest()[:12]
+            return (f"{match['attribute']}{match['quote']}{match['asset']}"
+                    f"?v={fingerprints[asset]}{match['quote']}")
+
+        html = built_html.read_text(encoding="utf-8")
+        built_html.write_text(reference.sub(version, html), encoding="utf-8")
+
+
 def build(root: Path = ROOT, output_dir: Path | None = None):
     """Copy only site files and selected assets; never delete the destination."""
     root = Path(root).resolve()
@@ -278,6 +303,7 @@ def build(root: Path = ROOT, output_dir: Path | None = None):
     (output / "data.js").write_text(
         "// Generated from archived experiments; run python scripts/build_site.py to refresh.\n"
         f"window.BENCHMARK_DATA = {serialized};\n", encoding="utf-8")
+    _version_asset_references(source, output)
     (output / ".nojekyll").touch()
     return output, payload
 
