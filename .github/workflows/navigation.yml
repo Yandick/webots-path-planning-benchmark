@@ -1,9 +1,9 @@
 name: Navigation checks
 on:
   push:
-    paths-ignore: ['docs/**', 'results/**', 'README.md']
+    paths-ignore: ['docs/**', 'results/**', 'README.md', 'site/**', 'scripts/build_site.py', 'tests/test_site.py', '.github/workflows/pages.yml']
   pull_request:
-    paths-ignore: ['docs/**', 'results/**', 'README.md']
+    paths-ignore: ['docs/**', 'results/**', 'README.md', 'site/**', 'scripts/build_site.py', 'tests/test_site.py', '.github/workflows/pages.yml']
   workflow_dispatch:
 permissions:
   contents: read

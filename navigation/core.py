@@ -1,4 +1,4 @@
-"""Classical baselines and safe-bubble QP smoothing of a Voronoi reference.
+"""Classical baselines and Dev1ce's method (Voronoi + safe-bubble QP smoothing).
 
 The controller receives only pose, measured velocity and obstacle surface points.
 It does not query moving-obstacle schedules, true positions, radii or future states.

@@ -1,6 +1,6 @@
-"""Voronoi reference with Wen et al. (2024) safe-bubble QP smoothing.
+"""Dev1ce's method: Voronoi reference with safe-bubble QP smoothing.
 
-Reproduces the smoothing objective and bounds of G2VD, Section IV-D,
+Reproduces Wen et al. (2024)'s smoothing objective and bounds of G2VD, Section IV-D,
 Equations (5)-(8), DOI 10.1109/TASE.2024.3398996. The input here is the
 shared geometric Voronoi route, rather than the paper's state-lattice search.
 """
@@ -60,5 +60,6 @@ def smooth_reference(grid, reference):
 
 
 def voronoi_qp_path(grid, start, goal):
+    """Plan with Dev1ce's method; retain the stable callable name for compatibility."""
     reference = voronoi_route(grid, start, goal)
     return None if reference is None else smooth_reference(grid, reference)

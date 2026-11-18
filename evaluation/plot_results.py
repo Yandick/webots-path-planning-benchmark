@@ -72,7 +72,8 @@ def map_figure(scene, initial_path):
 def figures(rows, runs, scene):
     fig, axes = plt.subplots(2, 3, figsize=(16, 9))
     groups = list(EXPERIMENT_GROUPS.values())
-    labels = [["A*", "RRT*", "Voronoi", "Safe QP"], ["Heading follower", "APF", "DWA"]]
+    labels = [[METHOD_LABELS[method] for method in groups[0]],
+              ["Heading follower", "APF", "DWA"]]
     titles = ["Global planners | same follower", "Local controllers | same A* guide"]
     for row, methods in enumerate(groups):
         for j, method in enumerate(methods):
@@ -128,7 +129,8 @@ def method_figure(runs, scene):
     for ax in axes:
         draw(ax, scene)
         ax.plot(raw[:, 0], raw[:, 1], ":", c="#94a3b8", lw=1, label="Safe Voronoi reference")
-        for method, label in (("voronoi", "Voronoi + greedy"), ("voronoi_qp", "Safe QP + cubic spline")):
+        for method, label in (("voronoi", "Voronoi + greedy"),
+                              ("voronoi_qp", METHOD_LABELS["voronoi_qp"])):
             p = np.asarray(chosen[method]["initial_path"])
             ax.plot(p[:, 0], p[:, 1], lw=2.2, c=COLORS[method], label=label)
     reference = resample_path(raw, .10)
@@ -150,7 +152,7 @@ def method_figure(runs, scene):
                 title="First turn | dashed: executed\nCircles: robot bodies at closest local shelf approach")
     for ax in axes:
         ax.legend(loc="lower right", fontsize=8)
-    fig.suptitle("Voronoi + safe QP smoothing | Wen et al. (2024), Section IV-D", fontsize=13)
+    fig.suptitle(f"{METHOD_LABELS['voronoi_qp']} | Wen et al. (2024), Section IV-D", fontsize=13)
     fig.tight_layout(rect=(0, .02, 1, .92))
     fig.savefig(OUT / "voronoi_smoothing.png", dpi=180)
     plt.close(fig)
@@ -167,7 +169,7 @@ def safety_figure(rows):
             mean, sd = np.mean(values), np.std(values)
             ax.bar(i, mean, yerr=sd, capsize=5, color=COLORS[method], width=.6)
             ax.text(i, mean+sd+.03*mean, f"{mean:.3f}", ha="center", fontsize=11)
-        ax.set_xticks([0, 1], ["Voronoi", "Safe QP"])
+        ax.set_xticks([0, 1], [METHOD_LABELS[m] for m in ("voronoi", "voronoi_qp")])
         ax.set(title=title, ylabel=ylabel)
         ax.margins(y=.20)
         ax.grid(axis="y", alpha=.2)

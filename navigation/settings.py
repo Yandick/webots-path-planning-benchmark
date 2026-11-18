@@ -3,13 +3,14 @@ import json
 import os
 from pathlib import Path
 
+# Display names are independent of the stable IDs used in configs and archives.
 METHOD_LABELS = {
     "astar": "A*",
     "rrt_star": "RRT*",
     "voronoi": "Voronoi",
     "apf": "APF controller",
     "dwa": "DWA controller",
-    "voronoi_qp": "Voronoi + safe QP smoothing",
+    "voronoi_qp": "Dev1ce's method",
 }
 METHODS = tuple(METHOD_LABELS)
 EXPERIMENT_GROUPS = {
