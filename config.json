@@ -1,4 +1,4 @@
 {
   "algorithm": "voronoi_qp",
-  "description": "Voronoi reference with Wen et al. safe-bubble QP smoothing, DOI 10.1109/TASE.2024.3398996"
+  "description": "Dev1ce's method: Voronoi reference with Wen et al. safe-bubble QP smoothing, DOI 10.1109/TASE.2024.3398996"
 }

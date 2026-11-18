@@ -4,7 +4,7 @@
 
 唯一地图为 10 m × 10 m 仓库，起点 (-4,-3.5)、终点 (4,3.5)，包含七组货架、中央通道、上方通道和两辆运动小车。装卸车在 seed 0 的 t=12..58 s 占用中央通道；巡行车经过上方出货区。小车时序预先给定，不读取机器人或算法身份。
 
-全局规划组比较 **A*、RRT*、Voronoi、安全 QP**，使用同一个方向跟踪器。局部控制组比较 **方向跟踪器、APF、DWA**，使用共同的 A* 引导与重规划机制。方向跟踪器的记录来自 A* 运行，因此六种方法共 30 次运行即可构成两组比较。
+全局规划组比较 **A*、RRT*、Voronoi、Dev1ce's method**，使用同一个方向跟踪器。局部控制组比较 **方向跟踪器、APF、DWA**，使用共同的 A* 引导与重规划机制。方向跟踪器的记录来自 A* 运行，因此六种方法共 30 次运行即可构成两组比较。
 
 APF、DWA 的结果代表带共同参考路线的局部控制表现。配置、角色和参考规划器均写入每次日志的 `role`、`guide_planner` 字段。
 
@@ -54,11 +54,13 @@ G(v,\omega)=0.60h+0.25d+0.15s,
 
 上述参数是本项目差速平台与激光输入的配置。当前 DWA 使用可达速度窗、连续圆弧安全检查与归一化三项评分，并使用共同 A* 路线目标；删除了原先额外的转向变化惩罚、未归一化评分和自定义障碍速度预测。
 
-## 4. 安全 QP 方法及改进动机
+## 4. Dev1ce's method：实现与改进动机
 
-采用 Wen 等人的 **G²VD Planner: Efficient Motion Planning With Grid-Based Generalized Voronoi Diagrams**，2024 年在线发表。[DOI](https://doi.org/10.1109/TASE.2024.3398996) · [全文](https://arxiv.org/html/2201.12981v4)
+**Dev1ce's method** 是本项目中 Voronoi 参考路线与安全气泡 QP 平滑方案的展示名称。配置值、代码函数名和归档结果保持 `voronoi_qp`，以兼容已有实验；更名不改变算法及来源。
 
-Voronoi baseline 沿骨架搜索后进行贪心直线简化。其路线较短，但在拐角处可能压缩障碍间距。安全 QP 保留中间参考路线，在安全气泡内平滑折角，目标是障碍间距与运动平顺性。
+平滑模块采用 Wen 等人的 **G²VD Planner: Efficient Motion Planning With Grid-Based Generalized Voronoi Diagrams**，2024 年在线发表。[DOI](https://doi.org/10.1109/TASE.2024.3398996) · [全文](https://arxiv.org/html/2201.12981v4)
+
+Voronoi baseline 沿骨架搜索后进行贪心直线简化。其路线较短，但在拐角处可能压缩障碍间距。Dev1ce's method 保留中间参考路线，在安全气泡内平滑折角，目标是障碍间距与运动平顺性。
 
 复现论文 IV-D、式 (5)–(8) 的平滑模块，以几何 Voronoi 路线作为输入：
 
@@ -105,7 +107,7 @@ b_i=\max\left(0,\frac{d_i}{\sqrt2}-0.32\right).
 | A* | 4/5 | 30.40 s | 12.763 m | 1 / 0 | 4.2 |
 | RRT* | 5/5 | 30.64 s | 12.987 m | 0 / 0 | 3.6 |
 | Voronoi | 5/5 | 30.26 s | 12.475 m | 0 / 0 | 1.0 |
-| 安全 QP | 5/5 | 30.80 s | 13.172 m | 0 / 0 | 1.2 |
+| Dev1ce's method | 5/5 | 30.80 s | 13.172 m | 0 / 0 | 1.2 |
 
 | 控制器（共同 A* 引导） | 无碰撞到达 | 成功平均耗时 | 平均最低实际净空 | 运动中指令角加速度 RMS |
 | --- | --- | --- | --- | --- |
@@ -113,15 +115,15 @@ b_i=\max\left(0,\frac{d_i}{\sqrt2}-0.32\right).
 | APF 控制器 | 5/5 | 33.44 s | 0.1441 m | 0.4471 rad/s² |
 | DWA 控制器 | 5/5 | 49.70 s | 0.1036 m | 0.4572 rad/s² |
 
-A* seed 4 在装卸车向左驶入中央通道时发生侧向碰撞，记录为一次失败。RRT*、Voronoi、安全 QP、APF、DWA 均为五次到达。
+A* seed 4 在装卸车向左驶入中央通道时发生侧向碰撞，记录为一次失败。RRT*、Voronoi、Dev1ce's method、APF、DWA 均为五次到达。
 
 ![分组结果](../results/benchmark.png)
 ![实际轨迹和重规划路线](../results/warehouse.png)
 ![碰撞负例](../results/collision_case.png)
 
-## 7. 安全 QP 与 Voronoi
+## 7. Dev1ce's method 与 Voronoi
 
-| 指标（五次平均） | Voronoi | 安全 QP | 变化 |
+| 指标（五次平均） | Voronoi | Dev1ce's method | 变化 |
 | --- | --- | --- | --- |
 | 最低实际净空 | 0.1316 m | 0.1998 m | 增加 51.8% |
 | 初始路径峰值曲率 | 10.574 m⁻¹ | 1.353 m⁻¹ | 降低 87.2% |
@@ -165,13 +167,13 @@ Webots R2025a 的 seed 0 原生运行中，六种方法均无碰撞到达。对�
 | Voronoi | 到达 | 30.144 s | 0.1850 m | 3 / 12 |
 | APF 控制器 | 到达 | 33.856 s | 0.1564 m | 6 / 13 |
 | DWA 控制器 | 到达 | 46.816 s | 0.1146 m | 11 / 11 |
-| 安全 QP | 到达 | 31.968 s | 0.2399 m | 2 / 11 |
+| Dev1ce's method | 到达 | 31.968 s | 0.2399 m | 2 / 11 |
 
 RRT* 的最长连续静止为 0.288 s。原生雷达最近测量点的几何误差最大为 0.0110 m。
 
 [原生验证摘要](../results/webots_validation.json) · [六次完整原生日志](../results/webots_raw_runs.json.gz)
 
-![Webots 原生截图：安全 QP，t=28 s](../results/webots_scene.png)
+![Webots 原生截图：Dev1ce's method，t=28 s](../results/webots_scene.png)
 
 ```bash
 python -m pip install -r requirements.txt
