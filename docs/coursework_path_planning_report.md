@@ -26,7 +26,7 @@
 
 主要对照是 A* 与 A* 提前让行版、RRT* 与 RRT* 提前让行版。每一对使用相同的初始路线、车速限制和路线跟踪器。Voronoi 与 G²VD Planner 使用同一个跟踪器，APF 和 DWA 各自决定局部运动，使用 A* 的引导路线。
 
-机器人半径 0.18 m，规划时计入 0.14 m 余量。最大线速度 0.45 m/s，最大角速度 1.5 rad/s。每个控制步通过激光命中点标记障碍，通过测量射线清除旧的占据记录，观测最长保留 1 s。机器人到参考路线的连接段或剩余路线被堵住时才重新规划，两次尝试至少相隔 1 s。仿真器知道小车的位置，规划器使用静态地图、机器人位姿、速度和激光测量。[Nav2 障碍层](https://docs.nav2.org/jazzy/configuration_and_development/configuration_guide/core_servers/costmap_2d/costmap_plugins/obstacle/)
+机器人半径 0.18 m，规划时计入 0.14 m 余量。最大线速度 0.45 m/s，最大角速度 1.5 rad/s。每个控制步通过激光命中点标记障碍，通过测量射线清除旧的占据记录，观测最长保留 1 s。原版会检查机器人到参考路线的连接段以及剩余路线，发现阻挡就尝试重新规划。所有版本的两次重规划尝试至少相隔 1 s。仿真器知道小车的位置，规划器使用静态地图、机器人位姿、速度和激光测量。[Nav2 障碍层](https://docs.nav2.org/jazzy/configuration_and_development/configuration_guide/core_servers/costmap_2d/costmap_plugins/obstacle/)
 
 二维仿真的控制周期为 0.10 s，碰撞检查每 0.01 s 一次。激光用 180 条射线覆盖 360°，每束返回 5 m 范围内的首个命中点。100 s 内无碰撞进入距目标 0.25 m 的区域算到达。发生碰撞时立即结束，该次会保留在结果中。线加速度上限为 0.8 m/s²，角加速度上限为 3 rad/s²，轮距为 0.30 m。公共跟踪器按 0.08 m 间隔采样路线，向前看最多 8 个采样点。
 
