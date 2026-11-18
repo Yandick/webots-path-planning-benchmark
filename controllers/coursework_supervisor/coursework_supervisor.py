@@ -63,7 +63,9 @@ def main():
               "min_surface_clearance": min_gap, "actual_path_length": length,
               "finish_time": rows[-1]["t"], "trajectory": rows,
               "collision_model": "signed geometry distance minus 0.18m robot radius at every 32ms step"}
-    (out / f"{tag}_supervisor.json").write_text(json.dumps(result, indent=2), encoding="utf-8")
+    temporary = out / f"{tag}_supervisor.tmp"
+    temporary.write_text(json.dumps(result, indent=2), encoding="utf-8")
+    temporary.replace(out / f"{tag}_supervisor.json")
     if recording:
         supervisor.movieStopRecording()
         while not supervisor.movieIsReady():

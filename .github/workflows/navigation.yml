@@ -35,7 +35,7 @@ jobs:
           apt-get update -qq
           apt-get install -y python3-pip xvfb xauth
           python3 -m pip install -r requirements.txt
-      - name: Run all six methods on every course map
+      - name: Run all registered methods on every course map
         run: python3 evaluation/webots_benchmark.py --timeout 360
       - name: Validate native sensors and export the seed-0 comparison
         run: python3 evaluation/check_webots_smoke.py --export results/webots-course

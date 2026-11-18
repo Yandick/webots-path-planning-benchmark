@@ -18,7 +18,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from navigation.scenarios import MAP_FILE, SCENES, SCENE_INFO, make_scene
-from navigation.settings import METHOD_LABELS
+from navigation.settings import METHOD_LABELS, YIELD_BASES
 
 
 RESULT_ASSETS = (
@@ -30,7 +30,7 @@ NATIVE_ASSETS = ("webots_validation.json", "webots_raw_runs.json.gz")
 CSV_NUMERIC_FIELDS = (
     "finish_time", "actual_path_length", "min_surface_clearance",
     "replan_count", "collision_count", "planned_peak_curvature",
-    "moving_angular_accel_rms",
+    "moving_angular_accel_rms", "yield_count", "yield_time_s",
 )
 
 
@@ -112,11 +112,26 @@ def _validate_sources(archive, rows, manifest, archive_path):
             raise ValueError(f"Non-increasing trajectory timestamps: {filename}")
         if not math.isclose(times[-1], run["finish_time"], abs_tol=1e-8):
             raise ValueError(f"Trajectory end differs from finish_time: {filename}")
+        events = run["yield_events"]
+        previous_end = 0.
+        for event in events:
+            start, end = event["start"], event["end"]
+            if start < previous_end-1e-8 or start >= end or end > times[-1]+1e-8:
+                raise ValueError(f"Invalid yield interval: {filename}")
+            previous_end = end
+        if (len(events) != run["yield_count"]
+                or (events and run["algorithm"] not in YIELD_BASES)
+                or not math.isclose(sum(e["end"]-e["start"] for e in events), run["yield_time_s"], abs_tol=1e-8)):
+            raise ValueError(f"Yield events differ from reported totals: {filename}")
         if not math.isclose(run["config"]["radius"], manifest["config"]["radius"]):
             raise ValueError(f"Robot radius differs from manifest: {filename}")
         indexed[key] = run
     if set(indexed) != expected:
         raise ValueError("Archive is missing a method/seed run")
+    for name, seed in scenes:
+        for improved, base in YIELD_BASES.items():
+            if indexed[name, base, seed]["initial_path"] != indexed[name, improved, seed]["initial_path"]:
+                raise ValueError(f"Paired runs used different initial paths: {name}, {base}, {seed}")
 
     csv_keys = set()
     for row in rows:
@@ -167,7 +182,8 @@ def export_webots(results, names, methods):
             raise ValueError("Native scene differs from the replay map")
         recorded = archive.pop(run["raw_run"], None)
         fields = ("scene", "scene_sha256", "seed", "algorithm", "status", "finish_time",
-                  "actual_path_length", "min_surface_clearance", "replan_count", "replan_attempt_count")
+                  "actual_path_length", "min_surface_clearance", "replan_count", "replan_attempt_count",
+                  "yield_count", "yield_time_s")
         if recorded is None or any(run[key] != recorded[key] for key in fields):
             raise ValueError("Native summary differs from its recorded run")
         runs.append({
@@ -175,6 +191,7 @@ def export_webots(results, names, methods):
             "finish_time": run["finish_time"], "path_length": run["actual_path_length"],
             "min_clearance": run["min_surface_clearance"], "replan_count": run["replan_count"],
             "replan_attempt_count": run["replan_attempt_count"],
+            "yield_count": run["yield_count"], "yield_time_s": run["yield_time_s"],
         })
     if expected or archive:
         raise ValueError("Native archive and summary do not cover the same map/method runs")
@@ -216,18 +233,22 @@ def create_payload(root: Path = ROOT):
                 "mean_curvature": _mean(selected, "planned_peak_curvature"),
                 "mean_angular_accel": _mean(selected, "moving_angular_accel_rms"),
                 "mean_replans": _mean(successes, "replan_count"),
+                "mean_yield_time": _mean(selected, "yield_time_s"),
             })
             for run in selected:
                 runs.append({
                     "scene": name, "method": method, "seed": run["seed"], "status": run["status"],
                     "finish_time": run["finish_time"], "path_length": run["actual_path_length"],
                     "min_clearance": run["min_surface_clearance"], "replan_count": run["replan_count"],
+                    "yield_events": run["yield_events"], "yield_time_s": run["yield_time_s"],
+                    "yield_count": run["yield_count"],
                     "trajectory": [[p[k] for k in ("t", "x", "y", "theta", "clearance")] for p in run["trajectory"]],
                     "initial_path": run["initial_path"],
                     "route_updates": [{"t": item["t"], "path": item["path"]} for item in run["route_updates"]],
                 })
     payload = {
-        "schema_version": 2,
+        "schema_version": 3,
+        "pairs": [{"base": base, "improved": improved} for improved, base in YIELD_BASES.items()],
         "methods": [{"id": method, "label": METHOD_LABELS[method],
                      "group": "local" if method in ("apf", "dwa") else "global"} for method in methods],
         "scenes": maps, "seeds": seeds, "runs": runs, "summary": summaries,
@@ -237,7 +258,7 @@ def create_payload(root: Path = ROOT):
             "manifest": "results/manifest.json", "raw_runs_sha256": archive_hash,
             "trajectory_columns": ["t_s", "x_m", "y_m", "theta_rad", "clearance_m"],
             "successful_runs_only": ["mean_time", "mean_path", "mean_replans"],
-            "all_runs": ["mean_clearance", "mean_curvature", "mean_angular_accel"],
+            "all_runs": ["mean_clearance", "mean_curvature", "mean_angular_accel", "mean_yield_time"],
         },
     }
     _finite_json(payload)

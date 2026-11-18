@@ -20,6 +20,7 @@ class ObservationMap:
 
     def update(self, position, points, t):
         grid = self.grid
+        hits = np.empty((0, 2))
         if len(points):
             delta = points-np.asarray(position)
             ranges = np.linalg.norm(delta, axis=1)
@@ -42,6 +43,7 @@ class ObservationMap:
             grid.inflated_grid = (grid.dist_map <= grid.inflation_radius).astype(np.uint8)
             self.dynamic_distance = (distance_transform_edt(~dynamic)*grid.resolution
                                      if dynamic.any() else np.full_like(grid.dist_map, np.inf))
+        return hits
 
     def blocks(self, path):
         if not self.dynamic.any():

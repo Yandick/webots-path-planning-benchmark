@@ -3,239 +3,169 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#faf5ea">
-  <meta name="description" content="让移动机器人穿过四柱场地、U 形走廊和迷宫。回放六种导航方法的实际轨迹，比较机器人遇到小车时怎样走。">
+  <meta name="theme-color" content="#faf4e8">
+  <meta name="description" content="在三张公开地图上，同步回放 A*、RRT* 原版与提前让行版，比较移动机器人遇到小车时的路线、碰撞和等待。">
   <meta property="og:type" content="website">
-  <meta property="og:title" content="移动机器人路径规划实验 · Path Planning">
-  <meta property="og:description" content="三张公开地图上的静态和动态避障实验，包含轨迹回放、逐次结果和同步录像。">
-  <meta property="og:image" content="https://yandick.github.io/webots-path-planning-benchmark/results/map.png">
-  <title>移动机器人路径规划实验 · Path Planning</title>
+  <meta property="og:title" content="移动机器人动态避障 · Path Planning">
+  <meta property="og:description" content="同一辆横穿的小车，两种应对方式。三张公开地图、八种导航方法的二维与 Webots 实验。">
+  <meta property="og:image" content="https://yandick.github.io/webots-path-planning-benchmark/results/trajectories.png">
+  <title>移动机器人动态避障 · Path Planning</title>
   <link rel="icon" type="image/svg+xml" href="favicon.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" media="print" onload="this.media='all'" href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,550;1,9..144,400&amp;family=Geist+Mono:wght@400;500&amp;family=Urbanist:wght@400;550;650;700&amp;display=swap">
   <link rel="stylesheet" href="style.css">
   <script src="data.js" defer></script>
   <script src="app.js" defer></script>
 </head>
 <body>
-  <a class="skip-link" href="#main">跳到正文</a>
+  <a class="skip" href="#main">跳到正文</a>
   <header class="site-header">
-    <div class="container nav-wrap">
-      <a class="brand" href="#explore" aria-label="Path Planning 首页">
-        <img src="favicon.svg" alt="" width="34" height="34">
-        <span lang="en">Path <em>Planning</em></span>
-      </a>
-      <button class="menu-toggle" type="button" aria-controls="main-nav" aria-expanded="false" hidden>导航 <span aria-hidden="true">☰</span></button>
+    <div class="wrap nav-wrap">
+      <a class="brand" href="#replay" aria-label="Path Planning 首页"><img src="favicon.svg" alt="" width="33" height="33"><span lang="en">Path <em>Planning</em></span></a>
+      <button class="menu-button" type="button" aria-controls="main-nav" aria-expanded="false" hidden>导航</button>
       <nav id="main-nav" aria-label="主导航">
-        <a href="#explore">轨迹回放</a>
-        <a href="#results">实验结果</a>
-        <a href="#method">路径平滑</a>
-        <a href="#demo">仿真录像</a>
-        <a href="#reproduce">本地运行</a>
-        <a class="repo-link" href="https://github.com/Yandick/webots-path-planning-benchmark">GitHub</a>
+        <a href="#replay">同步回放</a><a href="#maps">实验地图</a><a href="#results">实验结果</a><a href="#method">方法与论文</a><a href="#demo">仿真录像</a>
+        <a class="repository" href="https://github.com/Yandick/webots-path-planning-benchmark">GitHub</a>
       </nav>
     </div>
   </header>
 
   <main id="main">
-    <section id="explore" class="hero" aria-labelledby="hero-title">
-      <div class="hero-layout container">
+    <section id="replay" class="hero" aria-labelledby="hero-title">
+      <div class="wrap hero-layout">
         <div class="hero-copy">
-          <p class="platform">Webots R2025a</p>
-          <h1 id="hero-title">移动机器人<br><span>路径规划实验</span></h1>
-          <p class="hero-intro">六种方法在三张公开地图上分别避障。墙和圆柱的位置固定，小车按预先设定的路线行驶。</p>
-          <div class="scene-picker results-only">
-            <h2 class="sr-only" id="maps-heading">选择地图</h2>
-            <div id="scene-options" class="scene-options" role="group" aria-labelledby="maps-heading"></div>
-            <p class="scene-note"><span id="scene-description"></span> <a id="scene-source" class="citation"></a></p>
+          <p class="eyebrow">移动机器人课程设计 <span aria-hidden="true">·</span> <span id="simulator-version">Webots</span></p>
+          <h1 id="hero-title">路径规划<br><em>与动态避障</em></h1>
+          <p class="intro">机器人已经刹住了，为什么还会被横穿的小车撞到？</p>
+          <p class="lede">原版 A* 和 RRT* 发现路被挡住时会重新找路。加上提前让行后，机器人会用连续几帧激光判断小车正往哪儿走，再决定是停在路口外，还是继续通过。</p>
+          <div class="scope live-only">
+            <table class="hero-compare" aria-label="三张地图上的二维到达次数">
+              <thead><tr><th scope="col">二维到达次数</th><th scope="col">原版</th><th scope="col">提前让行</th></tr></thead>
+              <tbody id="hero-pairs"></tbody>
+            </table>
+            <p id="hero-total"></p>
           </div>
         </div>
 
-        <div class="replay" role="region" aria-label="所选地图的轨迹回放">
-          <div class="instrument">
-            <div class="viewer-toolbar replay-only">
-              <div class="run-selectors">
-                <label class="select-wrap method-choice"><span class="sr-only">导航方法</span><select id="method-select"></select></label>
-                <label class="select-wrap seed-choice"><span>种子</span><select id="seed-select" aria-label="随机种子"></select></label>
-              </div>
-              <div class="view-switch" role="group" aria-label="地图视角">
-                <button type="button" data-view="iso" aria-pressed="true">轴测</button>
-                <button type="button" data-view="top" aria-pressed="false">俯视</button>
-              </div>
+        <div class="console" aria-label="同地图、同种子的二维同步回放">
+          <div class="console-heading">
+            <h2>同步回放</h2>
+            <div id="pair-switch" class="preset-switch live-only" role="group" aria-label="选择原版与提前让行版对照"></div>
+          </div>
+          <figure class="fallback"><img src="results/trajectories.png" alt="三张地图上的原版与提前让行版轨迹"><figcaption>图中叠加了种子 0 下两种方法实际走过的路线。</figcaption></figure>
+          <div class="live-only">
+            <div class="settings">
+              <label>地图 <select id="scene-select"></select></label>
+              <label>种子 <select id="seed-select"></select></label>
+              <label class="view-choice"><span class="sr-only">地图视角</span><select id="view-select"><option value="iso">轴测视图</option><option value="top">俯视图</option></select></label>
             </div>
-            <div class="map-surface">
-              <div class="map-caption replay-only"><span id="map-caption"></span> <span aria-hidden="true">/</span> <span id="run-status">起点</span></div>
-              <canvas id="trajectory-canvas" class="replay-only" width="800" height="420" role="img" aria-label="二维运行轨迹"></canvas>
-              <img class="replay-fallback" src="results/map.png" alt="四柱场地、U 形走廊和迷宫的固定障碍、起终点与小车路线">
+            <div id="screens" class="screens">
+              <article class="screen baseline" aria-label="左侧运行">
+                <div class="screen-top"><label><span class="sr-only">左侧方法</span><select id="left-method"></select></label><span id="left-status" class="status"></span></div>
+                <canvas id="left-canvas" width="500" height="400" role="img" aria-label="左侧机器人轨迹"></canvas>
+                <p id="left-outcome" class="outcome"></p>
+              </article>
+              <article class="screen improved" aria-label="右侧运行">
+                <div class="screen-top"><label><span class="sr-only">右侧方法</span><select id="right-method"></select></label><span id="right-status" class="status"></span></div>
+                <canvas id="right-canvas" width="500" height="400" role="img" aria-label="右侧机器人轨迹"></canvas>
+                <p id="right-outcome" class="outcome"></p>
+              </article>
             </div>
-            <div class="map-key replay-only">
-              <div class="map-legend" aria-label="图例">
-                <span><i class="key-path"></i>已走路线</span>
-                <span><i class="key-plan"></i>规划路线</span>
-                <span><i class="key-cart"></i>小车及路线</span>
-              </div>
-              <span class="grid-unit">网格 1 m</span>
+            <div class="legend" aria-label="回放图例">
+              <span><i class="legend-route"></i>已走路线</span><span><i class="legend-plan"></i>规划路线</span><span><i class="legend-cart"></i>移动小车</span>
             </div>
-            <div class="playback replay-only">
-              <button type="button" id="play-toggle" aria-label="播放轨迹" aria-pressed="false"><i class="play-icon" aria-hidden="true"></i></button>
-              <label class="sr-only" for="timeline">回放时间</label>
+            <div class="transport">
+              <button id="play-toggle" type="button" aria-label="播放同步轨迹" aria-pressed="false"><span class="play-icon" aria-hidden="true"></span></button>
+              <label class="sr-only" for="timeline">两次运行的公共时钟</label>
               <input id="timeline" type="range" min="0" step="0.01" value="0">
-              <output id="clock" for="timeline" aria-live="off">—</output>
-              <label class="select-wrap speed-choice"><span class="sr-only">回放速度</span><select id="speed-select"><option value="1">1×</option><option value="2" selected>2×</option><option value="3">3×</option></select></label>
-              <button type="button" id="reset-playback" aria-label="回到起点">从头</button>
+              <output id="clock" for="timeline">0.00 s</output>
+              <label class="speed"><span class="sr-only">播放速度</span><select id="speed-select"><option value="1">1×</option><option value="2" selected>2×</option><option value="3">3×</option></select></label>
+              <button class="reset" id="reset-playback" type="button">从头</button>
             </div>
+            <div class="event-bar" id="event-bar" hidden><span>跳到</span><div id="events"></div></div>
+            <p class="clock-note">先结束的机器人停在最后记录的位置，两边的小车始终按同一时钟行驶。</p>
           </div>
-          <dl class="run-metrics replay-only" aria-label="本次运行记录">
-            <div><dt id="run-time-label">到达耗时</dt><dd id="run-time">—</dd></div>
-            <div><dt>与障碍物的最小距离</dt><dd id="run-clearance">—</dd></div>
-            <div><dt>成功重规划</dt><dd id="run-replans">—</dd></div>
-          </dl>
-          <p id="data-error" class="notice" role="alert" hidden>回放数据未加载。图中是三张地图和小车的路线。</p>
-          <noscript><p class="notice">启用 JavaScript 可以切换地图和播放轨迹。</p></noscript>
+          <p id="load-error" class="notice" hidden>轨迹数据未加载，静态图中保留了运行路线。</p>
+          <noscript><p class="notice">启用 JavaScript 可切换地图和播放同步轨迹。</p></noscript>
         </div>
       </div>
     </section>
 
-    <section id="results" class="section results-section" aria-labelledby="results-title">
-      <div class="container">
-        <div class="section-heading results-heading">
-          <div>
-            <h2 id="results-title">实验结果</h2>
-            <p id="all-outcomes" class="all-outcomes results-only"></p>
-          </div>
-          <label class="result-scene-choice results-only">地图 <span class="select-wrap"><select id="result-scene"></select></span></label>
+    <section id="maps" class="section wrap" aria-labelledby="maps-title">
+      <div class="section-head">
+        <h2 id="maps-title">三张实验地图</h2>
+        <p>墙和圆柱来自公开地图。每张图加了一辆横穿路线的小车，种子会改变它经过路口的时刻。绿点是起点，红点是终点，虚线是小车的路线。</p>
+      </div>
+      <div id="map-atlas" class="atlas live-only" role="group" aria-label="选择同步回放和结果表所用的地图"></div>
+      <figure class="fallback"><img src="results/map.png" loading="lazy" alt="三张公开地图、起终点和小车路线"></figure>
+    </section>
+
+    <section id="results" class="results-section" aria-labelledby="results-title">
+      <div class="section wrap">
+        <div class="section-head">
+          <h2 id="results-title">实验结果</h2>
+          <p>同一个种子下比较各方法能否到达、走了多远，以及车身离障碍物最近时相隔多少。</p>
         </div>
-        <figure class="results-fallback">
-          <img src="results/benchmark.png" loading="lazy" alt="六种方法在三张地图上的到达次数和用时">
-          <figcaption>每种方法在同一张地图上跑五次，耗时取成功到达的运行平均值。</figcaption>
-        </figure>
-        <div class="results-only">
-          <div class="results-tabs" role="tablist" aria-label="实验分组">
-            <button type="button" role="tab" id="tab-global" data-group="global" aria-selected="true" aria-controls="results-panel">全局规划器</button>
-            <button type="button" role="tab" id="tab-local" data-group="local" aria-selected="false" aria-controls="results-panel" tabindex="-1">局部控制器</button>
-            <button type="button" role="tab" id="tab-webots" data-group="webots" aria-selected="false" aria-controls="results-panel" tabindex="-1" hidden>Webots 原生验证</button>
+        <figure class="fallback"><img src="results/benchmark.png" loading="lazy" alt="三张地图上两组原版与提前让行版的到达次数、耗时和让行时间"></figure>
+        <div class="live-only">
+          <div class="result-controls">
+            <div class="backend" role="group" aria-label="结果来源"><button type="button" data-backend="2d" aria-pressed="true">二维仿真</button><button type="button" data-backend="webots" aria-pressed="false" hidden>Webots 原生</button></div>
+            <label>地图 <select id="result-scene"></select></label>
           </div>
-          <div id="results-panel" role="tabpanel" aria-labelledby="tab-global">
-            <p id="group-description" class="group-description"></p>
-            <div class="results-grid">
-              <div class="results-table">
-                <div class="table-scroll" tabindex="0" role="region" aria-label="实验结果表，可横向滚动">
-                  <table>
-                    <caption class="sr-only">所选地图上各方法的到达次数、耗时、行程和车身与障碍物的最小距离</caption>
-                    <thead>
-                      <tr>
-                        <th scope="col">方法</th>
-                        <th scope="col"><span class="header-prefix">无碰撞</span>到达</th>
-                        <th scope="col" id="time-header">平均耗时</th>
-                        <th scope="col" id="length-header">平均行程</th>
-                        <th scope="col"><span class="header-prefix">与障碍物的</span>最小距离<small id="distance-average"></small></th>
-                      </tr>
-                    </thead>
-                    <tbody id="results-body"></tbody>
-                  </table>
-                </div>
-                <p id="table-note" class="table-note"></p>
-              </div>
-              <div class="chart-panel">
-                <div class="chart-heading">
-                  <h3 id="chart-title">与障碍物的最小距离</h3>
-                  <label class="select-wrap metric-choice"><span class="sr-only">图表指标</span><select id="metric-select"><option value="clearance">最小距离</option><option value="time">耗时</option><option value="length">行程</option></select></label>
-                </div>
-                <p id="chart-subtitle" class="chart-subtitle"></p>
-                <div id="metric-bars" class="metric-bars"></div>
-              </div>
+          <div class="paired-notes" id="paired-notes" aria-label="两个版本在三张地图上的配对结果"></div>
+          <div class="table-scroll" tabindex="0" role="region" aria-label="八种方法的实验结果，可横向滚动">
+            <table><caption id="results-caption"></caption><thead><tr>
+              <th scope="col">方法</th><th scope="col">到达 / 次数</th><th scope="col">碰撞</th><th scope="col">超时</th><th scope="col">到达耗时</th><th scope="col">实际行程</th><th scope="col">最小距离</th><th scope="col">提前让行时间</th>
+            </tr></thead><tbody id="results-body"></tbody></table>
+          </div>
+          <p class="table-note" id="result-note"></p>
+          <details id="run-records">
+            <summary>逐次运行记录</summary>
+            <label class="record-choice">方法 <select id="record-method"></select></label>
+            <div class="table-scroll" tabindex="0" role="region" aria-label="所选方法逐次运行的数据，可横向滚动">
+              <table><caption class="sr-only">每次运行的实际结果</caption><thead><tr><th scope="col">种子</th><th scope="col">结果</th><th scope="col">结束时间</th><th scope="col">行程</th><th scope="col">最小距离</th><th scope="col">重规划次数</th><th scope="col">提前让行时间</th></tr></thead><tbody id="records-body"></tbody></table>
             </div>
-            <div class="evidence-note">
-              <p id="evidence-text"></p>
-              <button type="button" id="replay-collision" class="case-button replay-only" hidden>重放碰撞前 5 秒</button>
-            </div>
-            <details id="run-records" class="run-records">
-              <summary>每次运行的数据</summary>
-              <div class="records-heading"><label>方法 <span class="select-wrap"><select id="record-method"></select></span></label></div>
-              <div class="table-scroll" tabindex="0" role="region" aria-label="各随机种子的运行记录">
-                <table class="records-table">
-                  <caption class="sr-only">所选方法在各个种子下的运行记录</caption>
-                  <thead><tr><th scope="col">种子</th><th scope="col">结果</th><th scope="col">耗时</th><th scope="col">行程</th><th scope="col"><span class="header-prefix">与障碍物的</span>最小距离</th><th scope="col"><span class="header-prefix">成功</span>重规划</th></tr></thead>
-                  <tbody id="records-body"></tbody>
-                </table>
-              </div>
-              <p class="table-note">耗时从出发算到运行结束。距离从车身边缘量起，刚接触时为零，发生重叠时为负。</p>
-            </details>
-          </div>
-        </div>
-        <div class="setup-notes">
-          <div><h3>小车按什么路线走？</h3><p>地图中的墙和圆柱来自原图，小车的路线和出发时间由本课设设定。同一张地图、同一个种子，六种方法遇到的小车按相同的时刻表行驶。</p></div>
-          <div><h3>机器人何时改道？</h3><p>机器人用激光探路，每次观测最多保留 1 秒。前方路线被挡住时重新规划，两次尝试至少相隔 1 秒。所有方法共用相同的限速和制动规则。</p></div>
+          </details>
         </div>
       </div>
     </section>
 
-    <section id="method" class="section method-section container" aria-labelledby="method-title">
-      <div class="method-layout">
-        <div class="method-copy">
-          <h2 id="method-title">路径平滑</h2>
-          <p class="method-lead">Dev1ce's method 从一条 Voronoi 折线出发。</p>
-          <p>先沿障碍物之间的空隙找路，再根据每个路径点周围的空地，划出它能移动的范围。用二次规划调整折点，最后用样条把这些点连起来，交给方向跟踪器。</p>
-          <p>平滑的目标和约束沿用 Wen 等人在第 IV-D 节给出的方法。<a class="citation" href="https://doi.org/10.1109/TASE.2024.3398996">G²VD 论文</a></p>
-        </div>
-        <figure class="method-figure results-only">
-          <div id="smoothing-map"></div>
-          <figcaption><span id="smoothing-caption"></span><span class="route-key"><i class="raw-reference"></i>Voronoi<i class="smooth-reference"></i>Dev1ce's method</span></figcaption>
-        </figure>
-      </div>
-      <div class="comparison results-only">
-        <div class="comparison-caption"><h3>平滑前后</h3><p id="comparison-map"></p></div>
-        <dl class="comparison-values">
-          <div><dt>与障碍物的最小距离</dt><dd id="clearance-gain">—</dd></div>
-          <div><dt>初始路径峰值曲率</dt><dd id="curvature-gain">—</dd></div>
-          <div><dt>运动中指令角加速度的均方根</dt><dd id="accel-gain">—</dd></div>
-        </dl>
+    <section id="method" class="section wrap" aria-labelledby="method-title">
+      <div class="section-head"><h2 id="method-title">方法与论文</h2></div>
+      <div class="method-grid">
+        <article class="method-copy">
+          <h3>A* 与 RRT* 怎样提前让行</h3>
+          <p>原版会检查前方路线，发现被挡住时重新规划。提前让行版沿用这套机制，并根据连续几次激光观测估计小车的移动方向和速度。</p>
+          <p>机器人向前预测约 3.5 秒。两车可能靠得太近时，它会提前刹停，等小车通过后再走。如果已经到了路口，停下来反而挡住小车，它会继续穿过。</p>
+          <p>遇阻或让行后，如果 2.5 秒内向前移动不足 10 厘米，机器人会从当前位置重新找路。</p>
+          <p id="rrt-example" class="recorded-example" hidden><span id="rrt-example-text"></span> <a id="rrt-example-link" href="#replay">回放这次交会</a></p>
+        </article>
+        <article class="method-copy">
+          <h3>Voronoi 路线怎样变平滑</h3>
+          <p>本项目复现了 G²VD Planner 第 IV-D 节的二次规划平滑步骤。先用几何 Voronoi 方法找出路线，再允许每个折点在周围的空地里小幅移动，使弯道更平顺。</p>
+          <p class="paper-citation">Wen 等，<cite lang="en">G²VD Planner: Efficient Motion Planning With Grid-Based Generalized Voronoi Diagrams.</cite> <a href="https://arxiv.org/abs/2201.12981">原文</a></p>
+          <details class="smoothing-detail live-only"><summary>所选地图上平滑前后的路线</summary>
+            <figure class="smoothing"><div id="smoothing-map"></div><figcaption><span id="smoothing-caption"></span><span class="mini-legend"><i class="raw"></i>Voronoi <i class="smooth"></i>G²VD 平滑后</span></figcaption></figure>
+          </details>
+        </article>
       </div>
     </section>
 
-    <section id="demo" class="section demo-section" aria-labelledby="demo-title">
-      <div class="container">
-        <h2 id="demo-title">仿真记录</h2>
-        <div class="demo-grid">
-          <figure class="video-figure">
-            <h3>六种方法同步回放</h3>
-            <video controls playsinline preload="none" poster="results/map.png" aria-label="三张地图的种子 0 轨迹同步回放，三倍速，无声">
-              <source src="results/course_maps.mp4" type="video/mp4">
-              当前浏览器无法播放这段视频。
-            </video>
-            <figcaption>三张地图依次播放。每张图上六种方法同时出发，使用种子 0，录像为三倍速。</figcaption>
-          </figure>
-          <figure class="tracks-figure">
-            <h3>三张地图上的实际路线</h3>
-            <img src="results/trajectories.png" loading="lazy" alt="三张地图上六种方法在种子 0 下实际走过的路线">
-            <figcaption>轨迹画到这次运行结束为止。遇到碰撞或超时，路线会停在最后记录的位置。</figcaption>
-          </figure>
-        </div>
-      </div>
-    </section>
-
-    <section id="reproduce" class="section reproduce-section container" aria-labelledby="reproduce-title">
-      <div class="section-heading"><h2 id="reproduce-title">本地运行</h2></div>
-      <div class="reproduce-grid">
-        <div class="reproduce-copy">
-          <h3>二维实验</h3>
-          <p>安装 Python 依赖后运行基准脚本，可在 <code>results/</code> 找到每张地图的耗时和轨迹。生成同步录像还需要安装 <code>ffmpeg</code>。</p>
-          <h3>Webots 仿真</h3>
-          <p>在 Webots R2025a 中打开 <code id="world-file">worlds/turtlebot3_stage2.wbt</code>。更换算法时，在 <code>config.json</code> 里修改 <code>algorithm</code>。<a class="citation" href="https://github.com/Yandick/webots-path-planning-benchmark/actions/workflows/navigation.yml">Webots 验证记录</a></p>
-        </div>
-        <div class="quickstart">
-          <div class="code-top"><span>终端</span><button type="button" id="copy-commands" hidden>复制命令</button></div>
-          <pre tabindex="0" aria-label="运行二维实验的命令"><code id="quickstart-code">git clone https://github.com/Yandick/webots-path-planning-benchmark.git
-cd webots-path-planning-benchmark
-python -m pip install -r requirements.txt
+    <section id="demo" class="media-section" aria-labelledby="demo-title">
+      <div class="section wrap">
+        <div class="section-head"><h2 id="demo-title">仿真录像</h2><p>四个画面同步播放。上排是 A*，下排是 RRT*，每排左侧是原版，右侧是提前让行版。</p></div>
+        <figure class="movie"><video controls playsinline preload="none" poster="results/map.png" aria-label="三张地图上原版与提前让行版同步回放"><source src="results/course_maps.mp4" type="video/mp4">当前浏览器无法播放此视频。</video><figcaption>三张地图依次播放，均使用种子 0。录像由二维实验轨迹生成，三倍速，无音轨。</figcaption></figure>
+        <details class="reproduce"><summary>本地运行</summary>
+          <p>从仓库根目录运行以下命令。也可以用 Webots 直接打开 <code id="world-file">worlds/turtlebot3_stage2.wbt</code>。<a id="native-source" href="https://github.com/Yandick/webots-path-planning-benchmark/actions/workflows/navigation.yml">仓库的 Webots 工作流</a></p>
+          <pre tabindex="0"><code>python -m pip install -r requirements.txt
 python scripts/generate_worlds.py
 python evaluation/benchmark.py --seeds 0 1 2 3 4
 python evaluation/plot_results.py --video</code></pre>
-          <span id="copy-feedback" role="status" aria-live="polite"></span>
-        </div>
+        </details>
       </div>
     </section>
   </main>
-  <footer class="site-footer">
-    <div class="container"><span lang="en">Webots Path Planning Benchmark</span><span>Yandick</span></div>
-  </footer>
+  <footer><div class="wrap"><span lang="en">Webots Path Planning Benchmark</span><span>Yandick</span></div></footer>
 </body>
 </html>

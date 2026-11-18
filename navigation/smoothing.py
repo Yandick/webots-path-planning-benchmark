@@ -1,4 +1,4 @@
-"""Dev1ce's method: Voronoi reference with safe-bubble QP smoothing.
+"""G²VD Planner: safe-bubble QP smoothing on a geometric Voronoi reference.
 
 Reproduces Wen et al. (2024)'s smoothing objective and bounds of G2VD, Section IV-D,
 Equations (5)-(8), DOI 10.1109/TASE.2024.3398996. The input here is the
@@ -60,6 +60,6 @@ def smooth_reference(grid, reference):
 
 
 def voronoi_qp_path(grid, start, goal):
-    """Plan with Dev1ce's method; retain the stable callable name for compatibility."""
+    """Apply the G²VD Planner smoothing stage to a geometric Voronoi route."""
     reference = voronoi_route(grid, start, goal)
     return None if reference is None else smooth_reference(grid, reference)

@@ -1,21 +1,22 @@
-"""Classical baselines and Dev1ce's method (Voronoi + safe-bubble QP smoothing).
+"""Global and local navigation baselines, with optional yielding at crossings.
 
 The controller receives only pose, measured velocity and obstacle surface points.
 It does not query moving-obstacle schedules, true positions, radii or future states.
 """
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import heapq
 import math
 import time
 
 import numpy as np
 
-from .settings import DEFAULT_METHOD, METHODS
+from .settings import DEFAULT_METHOD, METHODS, YIELD_BASES
 from .observation_map import ObservationMap
 from .local import apf_command, dwa_command
 from .classical import rrt_star, voronoi_path
 from .smoothing import voronoi_qp_path
 from .metrics import resample_path
+from .yielding import CrossingGuard
 
 
 def angle(a):
@@ -79,12 +80,13 @@ class Navigator:
     def __init__(self, scene, method=DEFAULT_METHOD, config=None):
         if method not in METHODS:
             raise ValueError(method)
-        self.scene, self.method = scene, method
+        self.scene, self.method = replace(scene, moving=[]), method
         self.cfg = config or Config()
-        self.observation = ObservationMap(scene, self.cfg.observation_retention)
+        self.observation = ObservationMap(self.scene, self.cfg.observation_retention)
         self.grid = self.observation.grid
         self.role = "local_controller" if method in ("apf", "dwa") else "global_planner"
-        self.guide_planner = "astar" if self.role == "local_controller" else method
+        self.guide_planner = "astar" if self.role == "local_controller" else YIELD_BASES.get(method, method)
+        self.crossing_guard = CrossingGuard(self.cfg) if method in YIELD_BASES else None
         self.plan_attempts = []
         self.route_updates = []
         self.steps_ms = []
@@ -140,37 +142,51 @@ class Navigator:
             j -= 1
         return dense[j]
 
-    def update_route(self, pose, points, t):
-        self.observation.update(pose[:2], points, t)
+    def update_route(self, pose, points, t, speed=0., dt=.1):
+        position = np.asarray(pose[:2])
+        hits = self.observation.update(position, points, t)
+        stalled = False
+        if self.crossing_guard is not None:
+            self.crossing_guard.observe(t, position, hits)
+            holding = self.crossing_guard.should_yield(t, dt, position, speed, self.remaining_path(position))
+            if self.plan_attempts or self.crossing_guard.events:
+                stalled = self.crossing_guard.stalled(t, position)
+            if holding:
+                return
         if t+1e-9 < self.next_route_check:
             return
         remaining = self.remaining_path(pose[:2])
         connection = resample_path([pose[:2], remaining[0]], .08)
-        if not self.observation.blocks(np.vstack((connection, remaining))):
+        blocked = self.observation.blocks(np.vstack((connection, remaining)))
+        if not blocked and not stalled:
             return
+        reason = "observed_route_blockage" if blocked else "stalled_after_blockage"
         self.next_route_check = t+self.cfg.replan_period
         begin = time.perf_counter()
         candidate = self.plan(pose[:2])
         elapsed = (time.perf_counter()-begin)*1000
         self.plan_attempts.append({"t": float(t), "success": candidate is not None,
-                                   "time_ms": elapsed, "reason": "observed_route_blockage"})
+                                   "time_ms": elapsed, "reason": reason})
         if candidate is not None:
             self.path = candidate
-            self.route_updates.append({"t": float(t), "reason": "observed_route_blockage",
+            self.route_updates.append({"t": float(t), "reason": reason,
                                        "path": candidate.tolist()})
 
     def step(self, pose, velocity, points, t, dt):
         tick = time.perf_counter()
         if self.planning_failed:
             return 0., 0.
-        self.update_route(pose, points, t)
-        target = self.target(np.asarray(pose[:2]))
-        if self.method == "apf":
-            raw = apf_command(pose, velocity, target, points, dt, self.cfg)
-        elif self.method == "dwa":
-            raw = self.dwa(pose, velocity, target, points, dt)
+        self.update_route(pose, points, t, velocity[0], dt)
+        if self.crossing_guard is not None and self.crossing_guard.holding:
+            raw = (0., 0.)
         else:
-            raw = self.follow_path(pose, target)
+            target = self.target(np.asarray(pose[:2]))
+            if self.method == "apf":
+                raw = apf_command(pose, velocity, target, points, dt, self.cfg)
+            elif self.method == "dwa":
+                raw = self.dwa(pose, velocity, target, points, dt)
+            else:
+                raw = self.follow_path(pose, target)
         command = self.brake(pose, velocity, points, self.limit_command(raw, velocity, dt), dt)
         self.steps_ms.append((time.perf_counter()-tick)*1000)
         return command
@@ -210,8 +226,14 @@ class Navigator:
     def dwa(self, pose, velocity, target, points, dt):
         return dwa_command(np.asarray(pose), velocity, target, points, dt, self.cfg)
 
-    def diagnostics(self):
+    def diagnostics(self, finish_time=None):
+        events = list(self.crossing_guard.events) if self.crossing_guard else []
+        if events and finish_time is not None:
+            events = [{**event, "end": min(event["end"], finish_time)} for event in events
+                      if event["start"] < finish_time]
         return {"role": self.role, "guide_planner": self.guide_planner,
+                "yield_count": len(events), "yield_time_s": sum(e["end"]-e["start"] for e in events),
+                "yield_events": events,
                 "replan_count": len(self.route_updates)-1,
                 "replan_attempt_count": len(self.plan_attempts),
                 "replan_attempts": self.plan_attempts,

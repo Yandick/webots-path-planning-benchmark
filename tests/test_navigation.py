@@ -10,7 +10,8 @@ import numpy as np
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from navigation.core import Navigator, astar
+from navigation.core import Navigator, Config, astar
+from navigation.yielding import CrossingGuard
 from navigation.classical import voronoi_path
 from navigation.smoothing import voronoi_qp_path
 from navigation.metrics import resample_path, path_metrics
@@ -162,7 +163,7 @@ class NavigationTests(unittest.TestCase):
     def test_global_planners_detour_before_a_temporary_blockage_ends(self):
         cart = MovingDisc("cart", .28, [[0, 0, -1], [3, 0, 0], [37, 0, 0], [40, 0, 1]])
         scene = Scene("temporary_blockage", start=(-2.5, 0.), goal=(2.5, 0.), duration=40., moving=[cart])
-        for method in ("astar", "rrt_star"):
+        for method in ("astar", "rrt_star", "astar_yield", "rrt_star_yield"):
             result = run(scene, method)
             self.assertEqual(result["status"], "success", method)
             self.assertLess(result["finish_time"], 37.)
@@ -170,9 +171,42 @@ class NavigationTests(unittest.TestCase):
 
     def test_controller_does_not_query_scripted_actor_states(self):
         scene = make_scene()
-        nav = Navigator(scene, "astar")
-        with patch.object(scene.moving[0], "position", side_effect=AssertionError("Oracle query")):
-            nav.step(np.array([*scene.start, 0.]), (0., 0.), np.empty((0, 2)), 0., .1)
+        for method in ("astar", "astar_yield", "rrt_star_yield"):
+            with patch.object(scene.moving[0], "position", side_effect=AssertionError("Oracle query")):
+                nav = Navigator(scene, method)
+                self.assertFalse(nav.scene.moving)
+                nav.step(np.array([*scene.start, 0.]), (0., 0.), np.empty((0, 2)), 0., .1)
+
+    def test_paired_planners_yield_before_the_crossing_and_then_reach_the_goal(self):
+        for name, seed, planner in (("turtlebot3_stage2", 0, "astar"), ("pointmaze_u", 1, "rrt_star")):
+            scene = make_scene(name, seed)
+            baseline, improved = run(scene, planner), run(scene, planner+"_yield")
+            self.assertEqual(baseline["initial_path"], improved["initial_path"])
+            self.assertEqual(baseline["status"], "collision")
+            self.assertEqual(improved["status"], "success")
+            self.assertGreater(baseline["replan_count"], 0)
+            self.assertLess(improved["yield_events"][0]["start"], baseline["finish_time"])
+            self.assertLess(improved["yield_events"][-1]["end"], improved["finish_time"])
+            self.assertGreater(improved["min_surface_clearance"], 0.)
+
+    def test_stopping_in_the_crossing_is_rejected_and_stale_scans_expire(self):
+        guard = CrossingGuard(Config())
+        position = np.array([.20, 0.])
+        route = np.array([position, [2., 0.]])
+        arc = np.array([[.16, 0.], [.128, .096], [.096, .128]])
+        for t in np.linspace(0., .6, 7):
+            guard.observe(t, position, arc+[0., .59-.2*t])
+        np.testing.assert_allclose(guard.tracks[0].velocity, [0., -.2], atol=1e-8)
+        guard.hold_until = 1.
+        self.assertFalse(guard.should_yield(.6, .1, position, .45, route))
+        guard.observe(1.3, position, np.empty((0, 2)))
+        self.assertEqual(guard.tracks, [])
+
+    def test_static_control_uses_the_same_route_without_yielding(self):
+        scene = replace(make_scene(), moving=[])
+        baseline, improved = run(scene, "astar"), run(scene, "astar_yield")
+        self.assertEqual(improved["trajectory"], baseline["trajectory"])
+        self.assertEqual(improved["yield_events"], [])
 
     def test_offset_robot_replans_even_when_remaining_reference_is_clear(self):
         scene = Scene("offset_reference", start=(-.75, -.14), goal=(-.85, 2.),

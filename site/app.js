@@ -1,96 +1,66 @@
-/* Archived trajectories only: this page does not simulate or alter benchmark results. */
+/* Both views share a clock and read unmodified trajectories from the archive. */
 (function () {
   "use strict";
 
   const $ = (id) => document.getElementById(id);
   const data = window.BENCHMARK_DATA;
-  const menuButton = document.querySelector(".menu-toggle");
-  const nav = $("main-nav");
-  document.documentElement.classList.add("has-menu");
-  menuButton.hidden = false;
+  const menu = document.querySelector(".menu-button");
+  const navigation = $("main-nav");
   function showMenu(open) {
-    menuButton.setAttribute("aria-expanded", String(open));
-    menuButton.setAttribute("aria-label", open ? "收起导航" : "展开导航");
-    nav.classList.toggle("open", open);
+    menu.setAttribute("aria-expanded", String(open));
+    navigation.classList.toggle("open", open);
   }
-  menuButton.addEventListener("click", function () {
-    showMenu(this.getAttribute("aria-expanded") !== "true");
-  });
-  document.querySelectorAll("#main-nav a").forEach((link) => {
-    link.addEventListener("click", () => showMenu(false));
-  });
+  menu.hidden = false;
+  document.documentElement.classList.add("has-menu");
+  menu.addEventListener("click", () => showMenu(menu.getAttribute("aria-expanded") !== "true"));
+  navigation.addEventListener("click", () => showMenu(false));
   document.addEventListener("keydown", (event) => {
-    if (event.key === "Escape" && nav.classList.contains("open")) {
+    if (event.key === "Escape" && navigation.classList.contains("open")) {
       showMenu(false);
-      menuButton.focus();
+      menu.focus();
     }
   });
 
-  $("copy-commands").hidden = false;
-  $("copy-commands").addEventListener("click", async () => {
-    const code = $("quickstart-code");
-    try {
-      if (!navigator.clipboard || !window.isSecureContext) throw new Error("Clipboard unavailable");
-      await navigator.clipboard.writeText(code.textContent);
-      $("copy-feedback").textContent = "已复制命令。";
-    } catch (_) {
-      const range = document.createRange();
-      range.selectNodeContents(code);
-      const selection = window.getSelection();
-      selection.removeAllRanges();
-      selection.addRange(range);
-      $("copy-feedback").textContent = "已选中命令，可以用系统的复制功能拷贝。";
-    }
-  });
-
-  if (data?.schema_version !== 2 || !data.scenes?.length || !data.runs?.length) {
-    $("data-error").hidden = false;
+  if (!data?.pairs?.length || !data.scenes?.length || !data.runs?.length) {
+    $("load-error").hidden = false;
     return;
   }
-  document.documentElement.classList.add("has-data");
-
-  const methodById = new Map(data.methods.map((method) => [method.id, method]));
-  const sceneById = new Map(data.scenes.map((scene) => [scene.id, scene]));
-  const summaryByKey = new Map(data.summary.map((item) => [[item.scene, item.method].join(":"), item]));
-  const runsByKey = new Map(data.runs.map((item) => [[item.scene, item.method, item.seed].join(":"), item]));
-  const outcomes = { success: "到达", collision: "碰撞", timeout: "超时", planning_failed: "未找到路线" };
+  const sides = ["left", "right"];
+  const methods = new Map(data.methods.map((item) => [item.id, item.label.replace(" controller", "")]));
+  const maps = new Map(data.scenes.map((item) => [item.id, item]));
+  const runIndex = new Map(data.runs.map((item) => [[item.scene, item.method, item.seed].join(":"), item]));
+  const summaries = new Map(data.summary.map((item) => [[item.scene, item.method].join(":"), item]));
+  const revised = new Set(data.pairs.map((item) => item.improved));
+  const outcomes = {success: "到达", collision: "碰撞", timeout: "超时", planning_failed: "规划失败"};
   const state = {
-    scene: data.scenes[0].id, method: "voronoi_qp", seed: data.seeds[0], time: 0, playing: false,
-    speed: 2, view: "iso", group: "global", metric: "clearance", previousFrame: null
+    scene: data.scenes[0].id, seed: data.seeds[0], left: data.pairs[0].base, right: data.pairs[0].improved,
+    view: "iso", backend: "2d", time: 0, speed: 2, playing: false
   };
-  function scene() { return sceneById.get(state.scene); }
-  function summary(method) { return summaryByKey.get([state.scene, method].join(":")); }
-  const canvas = $("trajectory-canvas");
-  const ctx = canvas.getContext("2d");
-  if (ctx) document.documentElement.classList.add("has-replay");
-  const motionPreference = window.matchMedia("(prefers-reduced-motion: reduce)");
-  let playbackRequested = !motionPreference.matches;
-  let viewerVisible = !window.IntersectionObserver;
-  let frameRequest = null;
-  let canvasWidth = 1;
-  let canvasHeight = 1;
+  const screens = {};
+  let animation = null;
+  let previousFrame = null;
 
-  function label(id, localGroup) {
-    if (localGroup && id === "astar") return "公共方向跟踪器";
-    return methodById.get(id).label.replace(" controller", "");
+  function scene() { return maps.get(state.scene); }
+  function run(method, seed = state.seed, map = state.scene) {
+    return runIndex.get([map, method, seed].join(":"));
   }
-  function fixed(value, digits) {
-    return value === null || value === undefined || !Number.isFinite(value) ? "—" : value.toFixed(digits);
-  }
-  function measured(value, unit, digits) {
-    return Number.isFinite(value) ? fixed(value, digits) + " " + unit : "—";
-  }
-  function run(method = state.method, seed = state.seed) {
-    return runsByKey.get([state.scene, method, seed].join(":"));
-  }
-  function element(tag, className, text) {
+  function create(tag, className, content) {
     const node = document.createElement(tag);
     if (className) node.className = className;
-    if (text !== undefined) node.textContent = text;
+    if (content !== undefined) node.textContent = content;
     return node;
   }
+  function measure(n, unit, digits) {
+    return Number.isFinite(n) ? n.toFixed(digits) + " " + unit : "—";
+  }
+  function mean(values) {
+    const numbers = values.filter(Number.isFinite);
+    return numbers.length ? numbers.reduce((total, n) => total + n, 0) / numbers.length : null;
+  }
+  function isYielding(record) {
+    return state.time < record.finish_time && record.yield_events?.some((event) => event.start <= state.time && state.time < event.end);
+  }
 
-  /* Binary search plus interpolation preserves the recorded clock. */
   function sampleAt(trajectory, time) {
     const first = trajectory[0];
     if (time <= first[0]) {
@@ -167,23 +137,24 @@
     return [[left, front, z], [right, front, z], [right, back, z], [left, back, z]];
   }
 
-  function draw() {
+  function draw(side) {
+    const {ctx, width: canvasWidth, height: canvasHeight} = screens[side];
     if (!ctx || canvasWidth < 2 || canvasHeight < 2) return;
     const map = scene();
     const { start, goal, robot_radius: robotRadius } = map;
     const [minX, maxX, minY, maxY] = map.bounds;
     const spanX = maxX - minX;
     const spanY = maxY - minY;
-    const active = run();
+    const active = run(state[side]);
     const iso = state.view === "iso";
     const centerX = (minX + maxX) / 2;
     const centerY = (minY + maxY) / 2;
     const rise = 0.55;
     const scale = iso
-      ? Math.min((canvasWidth - 36) / (0.8 * spanX + 0.6 * spanY + 0.6),
+      ? Math.min((canvasWidth - 18) / (0.8 * spanX + 0.6 * spanY + 0.6),
         (canvasHeight - 22) / ((0.6 * spanX + 0.8 * spanY) * rise + 0.95))
-      : Math.min((canvasWidth - 48) / (spanX + 0.3), (canvasHeight - 30) / (spanY + 0.3));
-    const centerV = canvasHeight / 2 + (iso ? scale * 0.15 : 0);
+      : Math.min((canvasWidth - 36) / (spanX + 0.3), (canvasHeight - 30) / (spanY + 0.3));
+    const centerV = canvasHeight / 2 + (iso ? scale * 0.07 : 0);
     function depth(x, y) { return 0.6 * x - 0.8 * y; }
     function project(x, y, z = 0) {
       const dx = x - centerX;
@@ -214,7 +185,6 @@
       ctx.stroke();
       ctx.setLineDash([]);
     }
-    // The cap and two visible faces use the same footprint in both views.
     function block(x, y, w, h, base, top, colors) {
       const lid = corners(x, y, w, h, top);
       if (iso) {
@@ -322,7 +292,7 @@
     });
     objects.push({ depth: depth(robotX, robotY), paint() {
       const collision = state.time >= active.finish_time && active.status === "collision";
-      const robotColor = collision ? "#ff6956" : "#ffab70";
+      const robotColor = collision ? "#ff6956" : isYielding(active) ? "#ffcf68" : "#ffab70";
       ring(robotX, robotY, robotRadius + 0.13, robotColor, 1.3);
       disc(robotX, robotY, robotRadius, 0.14, robotColor, "#b75935");
       const arrow = [[0.78, 0], [-0.38, 0.5], [-0.38, -0.5]].map(([dx, dy]) =>
@@ -331,11 +301,11 @@
       face(arrow, "#3c392b");
     }});
     objects.sort((a, b) => a.depth - b.depth).forEach((object) => object.paint());
-    pin(start, "起点", -1);
+    if (canvasWidth >= 210) pin(start, "起点", -1);
     pin(goal, "终点", 1);
 
     // Keep the position visible when a wall occludes the robot in the angled view.
-    if (iso) {
+    if (iso && canvasWidth >= 210) {
       const [x, y] = project(robotX, robotY, 0.14);
       const tagY = Math.max(11, y - Math.max(21, scale * 0.94));
       ctx.beginPath();
@@ -367,345 +337,376 @@
     }
   }
 
-  function resizeCanvas() {
-    const bounds = canvas.getBoundingClientRect();
-    canvasWidth = Math.max(100, bounds.width);
-    canvasHeight = Math.max(100, bounds.height);
-    const ratio = Math.min(window.devicePixelRatio || 1, 3);
-    canvas.width = Math.round(canvasWidth * ratio);
-    canvas.height = Math.round(canvasHeight * ratio);
-    if (ctx) ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
-    draw();
+  function resize() {
+    for (const side of sides) {
+      const screen = screens[side];
+      const rect = screen.canvas.getBoundingClientRect();
+      const ratio = Math.min(window.devicePixelRatio || 1, 3);
+      screen.width = rect.width;
+      screen.height = rect.height;
+      const width = Math.max(1, Math.round(rect.width * ratio));
+      const height = Math.max(1, Math.round(rect.height * ratio));
+      if (screen.canvas.width !== width) screen.canvas.width = width;
+      if (screen.canvas.height !== height) screen.canvas.height = height;
+      if (screen.ctx) screen.ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+      draw(side);
+    }
+  }
+  function totalTime() { return Math.max(...sides.map((side) => run(state[side]).finish_time)); }
+
+  function paintFrame() {
+    const duration = totalTime();
+    $("timeline").value = state.time;
+    $("timeline").style.setProperty("--played", (duration ? state.time / duration * 100 : 0) + "%");
+    $("timeline").setAttribute("aria-valuetext", state.time.toFixed(2) + " 秒，共 " + duration.toFixed(2) + " 秒");
+    $("clock").textContent = state.time.toFixed(2) + " / " + duration.toFixed(2) + " s";
+    for (const side of sides) {
+      const record = run(state[side]);
+      const finished = state.time >= record.finish_time;
+      const yielding = isYielding(record);
+      const status = $(side + "-status");
+      status.textContent = finished ? outcomes[record.status] : yielding ? "让行中" : state.time === 0 ? "起点" : state.playing ? "行驶中" : "已暂停";
+      status.dataset.state = finished ? record.status : yielding ? "yield" : "active";
+      draw(side);
+    }
   }
 
-  function updateClock() {
-    const active = run();
-    $("timeline").value = String(state.time);
-    $("timeline").style.setProperty("--played", (active.finish_time ? 100 * state.time / active.finish_time : 0) + "%");
-    $("clock").textContent = fixed(state.time, 2) + " / " + fixed(active.finish_time, 2) + " s";
-    $("timeline").setAttribute("aria-valuetext", fixed(state.time, 2) + " 秒，共 " + fixed(active.finish_time, 2) + " 秒");
-    const finished = state.time >= active.finish_time;
-    const descriptions = { success: "已到达", collision: "发生碰撞", timeout: "已超时", planning_failed: "未找到路线" };
-    const position = state.time === 0 ? "起点" : "已暂停";
-    $("run-status").textContent = finished ? descriptions[active.status] : (state.playing ? "正在回放" : position);
-    $("run-status").classList.toggle("collision", finished && active.status === "collision");
+  function stop() {
+    state.playing = false;
+    previousFrame = null;
+    if (animation !== null) cancelAnimationFrame(animation);
+    animation = null;
+    const button = $("play-toggle");
+    button.setAttribute("aria-pressed", "false");
+    button.setAttribute("aria-label", "播放同步轨迹");
   }
-
-  function syncPlayback() {
-    const playing = Boolean(ctx && playbackRequested && viewerVisible && !document.hidden && state.time < run().finish_time);
-    if (playing === state.playing) return;
-    state.playing = playing;
-    state.previousFrame = null;
-    $("play-toggle").setAttribute("aria-pressed", String(playing));
-    $("play-toggle").setAttribute("aria-label", playing ? "暂停轨迹" : "播放轨迹");
-    updateClock();
-    if (frameRequest !== null) cancelAnimationFrame(frameRequest);
-    frameRequest = playing ? requestAnimationFrame(animate) : null;
-  }
-
-  function requestPlayback(play) {
-    playbackRequested = play;
-    syncPlayback();
-  }
-
   function animate(timestamp) {
     if (!state.playing) return;
-    if (state.previousFrame !== null) {
-      state.time = Math.min(run().finish_time, state.time + Math.min((timestamp - state.previousFrame) / 1000, 0.1) * state.speed);
+    if (previousFrame !== null) {
+      state.time = Math.min(totalTime(), state.time + Math.min((timestamp - previousFrame) / 1000, .15) * state.speed);
     }
-    state.previousFrame = timestamp;
-    updateClock();
-    draw();
-    if (state.time >= run().finish_time) requestPlayback(false);
-    else frameRequest = requestAnimationFrame(animate);
+    previousFrame = timestamp;
+    if (state.time >= totalTime()) stop();
+    paintFrame();
+    if (state.playing) animation = requestAnimationFrame(animate);
   }
-
-  function chooseRun() {
-    const active = run();
-    state.time = Math.min(state.time, active.finish_time);
-    state.previousFrame = null;
-    if (state.time >= active.finish_time) playbackRequested = false;
-    $("timeline").max = String(active.finish_time);
-    $("seed-select").value = String(state.seed);
-    $("method-select").value = state.method;
-    $("run-time-label").textContent = active.status === "success" ? "到达耗时" : "终止时间";
-    $("run-time").textContent = fixed(active.finish_time, 2) + " s";
-    $("run-clearance").textContent = fixed(active.min_clearance, 4) + " m";
-    $("run-replans").textContent = active.replan_count + " 次";
-    canvas.setAttribute("aria-label", scene().label + "，" + label(state.method) + "，种子 " + state.seed + "，" + outcomes[active.status] + "。");
-    syncPlayback();
-    updateClock();
-    draw();
-  }
-
-  $("play-toggle").addEventListener("click", () => {
-    if (!state.playing && state.time >= run().finish_time) state.time = 0;
-    requestPlayback(!state.playing);
-  });
-  $("reset-playback").addEventListener("click", () => {
-    state.time = 0;
-    requestPlayback(false);
-    updateClock();
-    draw();
-  });
-  $("timeline").addEventListener("input", (event) => {
-    const requestedTime = Number(event.target.value);
-    state.time = Math.min(requestedTime, run().finish_time);
-    requestPlayback(false);
-    updateClock();
-    draw();
-  });
-  $("speed-select").addEventListener("change", (event) => { state.speed = Number(event.target.value); });
-  data.methods.forEach(({ id }) => $("method-select").add(new Option(label(id), id)));
-  data.seeds.forEach((seed) => $("seed-select").add(new Option(String(seed), String(seed))));
-  $("seed-select").addEventListener("change", (event) => { state.seed = Number(event.target.value); chooseRun(); renderSmoothing(); });
-  $("method-select").addEventListener("change", (event) => { state.method = event.target.value; chooseRun(); });
-  const viewButtons = document.querySelectorAll("[data-view]");
-  viewButtons.forEach((button) => {
-    button.addEventListener("click", () => {
-      state.view = button.dataset.view;
-      viewButtons.forEach((option) => option.setAttribute("aria-pressed", String(option === button)));
-      draw();
-    });
-  });
-  document.addEventListener("visibilitychange", syncPlayback);
-  motionPreference.addEventListener("change", (event) => {
-    if (event.matches) requestPlayback(false);
-  });
-  if (window.IntersectionObserver && ctx) {
-    const observer = new IntersectionObserver(([entry]) => {
-      viewerVisible = entry.isIntersecting;
-      syncPlayback();
-    });
-    observer.observe(document.querySelector(".instrument"));
-  }
-
-  function collisionCase() {
-    return data.runs.find((item) => item.scene === state.scene && groups[state.group].includes(item.method) && item.status === "collision");
-  }
-  $("replay-collision").addEventListener("click", () => {
-    const incident = collisionCase();
-    if (!incident) return;
-    state.method = incident.method;
-    state.seed = incident.seed;
-    state.time = Math.max(0, incident.finish_time - 5);
-    chooseRun();
-    renderSmoothing();
-    $("play-toggle").focus({ preventScroll: true });
-    document.querySelector(".instrument").scrollIntoView({ block: "center" });
-    requestPlayback(true);
-  });
-
-  const groups = {
-    global: ["astar", "rrt_star", "voronoi", "voronoi_qp"],
-    local: ["astar", "apf", "dwa"],
-    webots: ["astar", "rrt_star", "voronoi", "apf", "dwa", "voronoi_qp"]
-  };
-  function renderRecords() {
-    const method = $("record-method").value;
-    const rows = data.seeds.map((seed) => {
-      const record = run(method, seed);
-      const row = element("tr");
-      row.append(
-        element("td", "", seed),
-        element("td", record.status === "success" ? "" : "failed-run", outcomes[record.status]),
-        element("td", "", fixed(record.finish_time, 2) + " s"),
-        element("td", "", fixed(record.path_length, 3) + " m"),
-        element("td", "", fixed(record.min_clearance, 4) + " m"),
-        element("td", "", record.replan_count)
-      );
-      return row;
-    });
-    $("records-body").replaceChildren(...rows);
-  }
-
-  function setRecordMethods() {
-    const native = state.group === "webots";
-    $("run-records").hidden = native;
-    if (native) return;
-    const select = $("record-method");
-    const previous = select.value;
-    const methods = groups[state.group];
-    select.replaceChildren(...methods.map((id) => new Option(label(id, state.group === "local"), id)));
-    if (methods.includes(previous)) select.value = previous;
-    renderRecords();
-  }
-  $("record-method").addEventListener("change", renderRecords);
-
-  function resultRows() {
-    if (state.group === "webots") {
-      return data.webots.runs.filter((item) => item.scene === state.scene).map((item) => ({
-        method: item.method, status: item.status, success: item.status === "success" ? 1 : 0, n: 1,
-        mean_time: item.finish_time, mean_path: item.path_length, mean_clearance: item.min_clearance
-      }));
+  function togglePlayback() {
+    if (state.playing) {
+      stop();
+      paintFrame();
+      return;
     }
-    return groups[state.group].map(summary);
+    if (!totalTime()) return;
+    if (state.time >= totalTime()) state.time = 0;
+    state.playing = true;
+    previousFrame = null;
+    $("play-toggle").setAttribute("aria-pressed", "true");
+    $("play-toggle").setAttribute("aria-label", "暂停同步轨迹");
+    paintFrame();
+    animation = requestAnimationFrame(animate);
+  }
+  function seek(t) {
+    stop();
+    state.time = Math.max(0, Math.min(totalTime(), t));
+    paintFrame();
   }
 
-  function resultCounts(records) {
-    return Object.entries(outcomes).map(([status, title]) => {
-      const count = records.filter((row) => row.status === status).length;
-      return count ? count + " 次" + title : "";
-    }).filter(Boolean).join("，");
-  }
-  $("all-outcomes").textContent = "全部 " + data.runs.length + " 次二维运行中，" + resultCounts(data.runs) + "。";
-
-  function renderResults() {
-    const native = state.group === "webots";
-    const local = state.group === "local";
-    const rows = resultRows();
-    const descriptions = {
-      global: "四种规划器共用同一个方向跟踪器。",
-      local: "三种控制器都用 A* 引导。公共方向跟踪器一行取自 A* 的运行记录。"
-    };
-    $("group-description").textContent = native
-      ? scene().label + "的 Webots 原生记录，每种方法使用种子 " + data.webots.seed + " 跑一次。"
-      : descriptions[state.group] + "每种方法在" + scene().label + "上跑 " + data.seeds.length + " 次。";
-    $("time-header").textContent = native ? "结束时间" : "平均耗时";
-    $("length-header").textContent = native ? "实际行程" : "平均行程";
-    $("distance-average").textContent = native ? "" : "（" + data.seeds.length + " 次平均）";
-    const incident = native ? null : collisionCase();
-    $("replay-collision").hidden = !incident;
-    if (incident) $("replay-collision").textContent = "重放 " + label(incident.method) + " 碰撞前 5 秒";
-    if (native) {
-      $("table-note").textContent = "每行是一次原生运行，耗时从出发算到运行结束。";
-      if (data.webots.ci_url) {
-        const link = element("a", "citation", "原生运行记录");
-        link.href = data.webots.ci_url;
-        $("table-note").append(" ", link);
+  function renderEvents() {
+    const markers = [];
+    for (const side of sides) {
+      const item = run(state[side]);
+      const channel = side === "left" ? "左侧" : "右侧";
+      const first = item.yield_events?.[0];
+      if (first) {
+        markers.push([first.start, channel + "首次让行"]);
+        if (first.end < item.finish_time) markers.push([first.end, channel + "让行结束"]);
       }
-    } else {
-      $("table-note").textContent = "耗时和行程只统计成功到达的运行。最小距离从车身边缘量起，再对所有运行取平均。";
+      if (item.status === "collision") markers.push([item.finish_time, channel + "碰撞"]);
     }
-    const body = $("results-body");
-    body.replaceChildren();
-    rows.forEach((row) => {
-      const tr = element("tr", row.method === "voronoi_qp" ? "featured" : "");
-      tr.append(element("td", "", label(row.method, local)));
-      const successCell = element("td");
-      successCell.append(element("span", "success-count" + (row.success < row.n ? " partial" : ""), row.success + "/" + row.n));
-      tr.append(successCell);
-      tr.append(element("td", "", measured(row.mean_time, "s", native ? 3 : 2)));
-      tr.append(element("td", "", measured(row.mean_path, "m", 3)));
-      tr.append(element("td", "", measured(row.mean_clearance, "m", 4)));
-      body.append(tr);
-    });
-    const selected = native ? rows : data.runs.filter((item) =>
-      item.scene === state.scene && groups[state.group].includes(item.method));
-    $("evidence-text").textContent = scene().label + "，本组 " + selected.length + " 次运行中，" + resultCounts(selected) + "。";
-    const settings = {
-      clearance: { key: "mean_clearance", title: "与障碍物的最小距离", unit: "m", digits: 4,
-        subtitle: native ? "每种方法跑一次，记下车身边缘离障碍物最近时的距离。" : "每次先记下车身边缘离障碍物最近时的距离，再取平均值。" },
-      time: { key: "mean_time", title: native ? "运行耗时" : "平均到达耗时", unit: "s", digits: native ? 3 : 2,
-        subtitle: native ? "运行从出发到结束所用的仿真时间。" : "从出发到进入目标范围所用的仿真时间。" },
-      length: { key: "mean_path", title: native ? "实际行程" : "平均实际行程", unit: "m", digits: 3,
-        subtitle: "沿机器人实际走过的轨迹计算距离。" }
-    };
-    const metric = settings[state.metric];
-    $("chart-title").textContent = metric.title;
-    $("chart-subtitle").textContent = metric.subtitle;
-    const bars = $("metric-bars");
-    bars.replaceChildren();
-    const max = Math.max(...rows.map((row) => row[metric.key] || 0), 0.0001);
-    rows.forEach((row) => {
-      const wrapper = element("div", "metric-row" + (row.method === "voronoi_qp" ? " featured" : ""));
-      const heading = element("div", "bar-label", label(row.method, local));
-      const value = element("span", "bar-value", measured(row[metric.key], metric.unit, metric.digits));
-      const track = element("div", "bar-track");
-      track.setAttribute("aria-hidden", "true");
-      const fill = element("div", "bar-fill");
-      fill.style.width = Math.max(0, (row[metric.key] || 0) / max * 100) + "%";
-      track.append(fill); wrapper.append(heading, track, value); bars.append(wrapper);
-    });
+    markers.sort((a, b) => a[0] - b[0]);
+    $("events").replaceChildren(...markers.map(([t, name]) => {
+      const button = create("button", "", name + " " + t.toFixed(2) + " s");
+      button.type = "button";
+      button.addEventListener("click", () => seek(t));
+      return button;
+    }));
+    $("event-bar").hidden = !markers.length;
   }
 
-  const tabs = Array.from(document.querySelectorAll("[data-group]"));
-  function chooseGroup(button) {
-    state.group = button.dataset.group;
-    tabs.forEach((tab) => {
-      const selected = tab === button;
-      tab.setAttribute("aria-selected", String(selected));
-      tab.tabIndex = selected ? 0 : -1;
-    });
-    $("results-panel").setAttribute("aria-labelledby", button.id);
-    renderResults();
-    setRecordMethods();
+  function renderReplay() {
+    stop();
+    state.time = 0;
+    $("timeline").max = totalTime();
+    $("scene-select").value = state.scene;
+    $("seed-select").value = state.seed;
+    for (const side of sides) {
+      const method = state[side];
+      const item = run(method);
+      $(side + "-method").value = method;
+      const endpoint = measure(item.finish_time, "s", 2) + " " + outcomes[item.status];
+      const stats = [endpoint, "行程 " + measure(item.path_length, "m", 2)];
+      if (revised.has(method)) stats.push("让行 " + measure(item.yield_time_s, "s", 2));
+      $(side + "-outcome").textContent = stats.join(" · ");
+      screens[side].canvas.setAttribute("aria-label", scene().label + "，种子 " + state.seed + "，" + methods.get(method) + "。" + stats.join("，") + "。");
+    }
+    for (const button of $("pair-switch").children) {
+      button.setAttribute("aria-pressed", String(button.dataset.base === state.left && button.dataset.improved === state.right));
+    }
+    renderEvents();
+    paintFrame();
   }
-  tabs.forEach((button) => {
-    button.addEventListener("click", () => chooseGroup(button));
-    button.addEventListener("keydown", (event) => {
-      const visible = tabs.filter((tab) => !tab.hidden);
-      const index = visible.indexOf(button);
-      let next = index;
-      if (event.key === "ArrowRight") next = (index + 1) % visible.length;
-      else if (event.key === "ArrowLeft") next = (index + visible.length - 1) % visible.length;
-      else if (event.key === "Home") next = 0;
-      else if (event.key === "End") next = visible.length - 1;
-      else return;
-      event.preventDefault(); visible[next].focus(); chooseGroup(visible[next]);
+
+  function populateAtlas() {
+    const cards = data.scenes.map((map) => {
+      const card = create("article", "map-card");
+      const select = create("button", "map-pick");
+      select.type = "button";
+      select.dataset.scene = map.id;
+      const routes = map.moving[String(data.seeds[0])].map((cart) => ({path: cart.waypoints.map((point) => point.slice(1)), style: "map-cart-track"}));
+      select.append(planView(map, routes), create("span", "map-title", map.label));
+      select.setAttribute("aria-label", "选择" + map.label);
+      select.addEventListener("click", () => changeScene(map.id));
+      const attribution = create("a", "attribution", map.source_label);
+      attribution.href = map.source;
+      card.append(select, create("p", "", map.description), attribution);
+      return card;
     });
-  });
-  $("metric-select").addEventListener("change", (event) => {
-    state.metric = event.target.value; renderResults();
-  });
+    $("map-atlas").replaceChildren(...cards);
+  }
 
   function renderSmoothing() {
-    const baseline = summary("voronoi");
-    const featured = summary("voronoi_qp");
-    const rawPath = run("voronoi").initial_path;
-    const smoothPath = run("voronoi_qp").initial_path;
-    const drawing = planView(scene(), [
-      {path: smoothPath, style: "plan-smooth-path"},
-      {path: rawPath, style: "plan-raw-path"}
-    ]);
-    $("smoothing-map").replaceChildren(drawing);
-    $("smoothing-caption").textContent = scene().label + "，种子 " + state.seed + " 的初始规划路线。";
-    $("comparison-map").textContent = scene().label + "，Dev1ce's method 相对 Voronoi 的平均变化";
-    for (const [id, metric] of [["clearance-gain", "mean_clearance"], ["curvature-gain", "mean_curvature"], ["accel-gain", "mean_angular_accel"]]) {
-      const base = baseline[metric], smooth = featured[metric];
-      const change = Number.isFinite(base) && Number.isFinite(smooth) && base > 0 ? (smooth / base - 1) * 100 : null;
-      $(id).textContent = change === null ? "—" : (change > 0 ? "+" : change < 0 ? "−" : "") + fixed(Math.abs(change), 1) + "%";
+    const routes = [
+      {path: run("voronoi_qp").initial_path, style: "map-smooth"},
+      {path: run("voronoi").initial_path, style: "map-raw"}
+    ];
+    $("smoothing-map").replaceChildren(planView(scene(), routes));
+    $("smoothing-caption").textContent = scene().label + " · 种子 " + state.seed + "，两种方法在出发时规划的路线。";
+  }
+  function backendRuns() {
+    return state.backend === "webots" ? data.webots.runs : data.runs;
+  }
+  function displayRecord() {
+    const method = $("record-method").value;
+    const records = backendRuns().filter((item) => item.scene === state.scene && item.method === method).sort((a,b) => a.seed - b.seed);
+    $("records-body").replaceChildren(...records.map((item) => {
+      const row = create("tr");
+      [item.seed, outcomes[item.status], measure(item.finish_time, "s", 2), measure(item.path_length, "m", 2),
+        measure(item.min_clearance, "m", 3), item.replan_count,
+        revised.has(method) ? measure(item.yield_time_s, "s", 2) : "—"].forEach((value) => row.append(create("td", "", value)));
+      return row;
+    }));
+  }
+  function renderPairedResults(records) {
+    const key = (item) => item.scene + ":" + item.seed;
+    const notes = data.pairs.map(({base, improved}) => {
+      const left = records.filter((r) => r.method === base);
+      const right = new Map(records.filter((r) => r.method === improved).map((r) => [key(r), r]));
+      const matched = left.filter((r) => r.status === "success" && right.get(key(r))?.status === "success");
+      const delta = mean(matched.map((r) => right.get(key(r)).finish_time - r.finish_time));
+      const note = create("article");
+      note.append(create("h3", "", methods.get(base) + " · 三张地图合计"));
+      const successes = left.filter((r) => r.status === "success").length;
+      const revisedSuccesses = Array.from(right.values()).filter((r) => r.status === "success").length;
+      const counts = create("p", "paired-counts");
+      counts.append("原版 ", create("strong", "", successes + "/" + left.length), " 次到达，提前让行版 ",
+        create("strong", "", revisedSuccesses + "/" + right.size), " 次到达。");
+      note.append(counts);
+      if (matched.length) {
+        const change = Math.abs(delta) < .005 ? "平均耗时相同" : "改进版平均" + (delta > 0 ? "多用 " : "少用 ") + measure(Math.abs(delta), "s", 2);
+        note.append(create("p", "", "在双方都到达的 " + matched.length + " 组对照中，" + change + "。"));
+      } else {
+        note.append(create("p", "", "本组没有双方都到达的运行。"));
+      }
+      return note;
+    });
+    $("paired-notes").replaceChildren(...notes);
+  }
+  function renderOverview() {
+    $("hero-total").textContent = data.scenes.length + " 张地图 · " + methods.size + " 种方法 · " + data.runs.length + " 次二维运行";
+    for (const {base, improved} of data.pairs) {
+      const row = create("tr");
+      const heading = create("th", "", methods.get(base));
+      heading.scope = "row";
+      row.append(heading);
+      for (const id of [base, improved]) {
+        const records = data.runs.filter((item) => item.method === id);
+        row.append(create("td", "", records.filter((item) => item.status === "success").length + "/" + records.length));
+      }
+      $("hero-pairs").append(row);
     }
   }
-
-  function selectScene(id, initial = false) {
-    state.scene = id;
-    state.time = 0;
-    if (!initial) requestPlayback(false);
-    const map = scene();
-    $("result-scene").value = id;
-    for (const button of $("scene-options").children) {
-      button.setAttribute("aria-pressed", String(button.dataset.scene === id));
+  function renderResults() {
+    const native = state.backend === "webots";
+    const allRecords = backendRuns();
+    const records = allRecords.filter((item) => item.scene === state.scene);
+    $("result-scene").value = state.scene;
+    document.querySelectorAll("[data-backend]").forEach((button) => {
+      button.setAttribute("aria-pressed", String(button.dataset.backend === state.backend));
+    });
+    const n = records.filter((item) => item.status === "success").length;
+    $("results-caption").textContent = scene().label + "，" + (native ? "Webots 原生" : "二维仿真") + " " + records.length + " 次，" + n + " 次到达。";
+    const body = $("results-body");
+    body.replaceChildren();
+    for (const [id, label] of methods) {
+      const selected = records.filter((item) => item.method === id);
+      if (!selected.length) continue;
+      const ok = selected.filter((item) => item.status === "success");
+      const summary = native ? null : summaries.get([state.scene,id].join(":"));
+      const clearances = selected.map((item) => item.min_clearance);
+      const values = [
+        ok.length + "/" + selected.length, selected.filter((item) => item.status === "collision").length,
+        selected.filter((item) => item.status === "timeout").length,
+        measure(summary ? summary.mean_time : mean(ok.map((item) => item.finish_time)), "s", 2),
+        measure(summary ? summary.mean_path : mean(ok.map((item) => item.path_length)), "m", 2),
+        measure(summary ? summary.mean_clearance : mean(clearances), "m", 3),
+        revised.has(id) ? measure(mean(selected.map((item) => item.yield_time_s)), "s", 2) : "—"
+      ];
+      const row = create("tr", revised.has(id) ? "revised" : "");
+      const heading = create("th", "", label);
+      heading.scope = "row";
+      row.append(heading, ...values.map((value) => create("td", "", value)));
+      body.append(row);
     }
-    $("scene-description").textContent = map.description;
-    $("scene-source").textContent = map.source_label;
-    $("scene-source").href = map.source;
-    $("map-caption").textContent = map.label + " · 二维回放";
+    const failedPlans = records.filter((item) => item.status === "planning_failed").length;
+    const scope = native ? "每种方法使用种子 " + data.webots.seed + " 运行一次。" : "每种方法运行 " + data.seeds.length + " 次。";
+    const yielding = native && !records.some((item) => Number.isFinite(item.yield_time_s)) ? "原生记录中，提前让行时间未单列。" : "";
+    $("result-note").textContent = scope + "耗时和行程只统计成功到达的运行。最小距离从车身边缘量起，与让行时间均对全部运行取平均。" + yielding + (failedPlans ? "另有 " + failedPlans + " 次初始规划失败。" : "");
+    renderPairedResults(allRecords);
+    displayRecord();
+  }
+
+  function changeScene(id) {
+    state.scene = id;
+    const nativeButton = document.querySelector('[data-backend="webots"]');
+    nativeButton.hidden = !data.webots?.runs.some((item) => item.scene === id);
+    if (nativeButton.hidden) state.backend = "2d";
+    document.querySelectorAll("[data-scene]").forEach((button) => {
+      button.setAttribute("aria-pressed", String(button.dataset.scene === id));
+    });
     $("world-file").textContent = "worlds/" + id + ".wbt";
-    const nativeTab = $("tab-webots");
-    nativeTab.hidden = !data.webots?.runs.some((row) => row.scene === id);
-    const currentTab = tabs.find((tab) => tab.dataset.group === state.group && !tab.hidden);
-    chooseGroup(currentTab || tabs[0]);
-    chooseRun();
+    renderReplay();
+    renderResults();
     renderSmoothing();
   }
-  data.scenes.forEach((map) => {
-    const button = element("button");
-    button.type = "button";
-    button.dataset.scene = map.id;
-    button.append(planView(map), element("span", "", map.label));
-    button.addEventListener("click", () => selectScene(map.id));
-    $("scene-options").append(button);
-    $("result-scene").add(new Option(map.label, map.id));
-  });
-  $("result-scene").addEventListener("change", (event) => selectScene(event.target.value));
 
-  resizeCanvas();
-  selectScene(state.scene, true);
-  if (window.ResizeObserver) new ResizeObserver(resizeCanvas).observe(canvas.parentElement);
-  else window.addEventListener("resize", resizeCanvas);
-  if (!ctx) {
-    $("data-error").hidden = false;
-    $("data-error").textContent = "当前浏览器用静态图显示三张地图，小车和机器人的完整轨迹可在下方录像中对照。";
+  // Choose an actual paired encounter for the opening example. Aggregates include every seed.
+  function initialCase() {
+    let score = 0;
+    for (const pair of data.pairs) {
+      for (const map of data.scenes) {
+        for (const seed of data.seeds) {
+          const a = run(pair.base, seed, map.id), b = run(pair.improved, seed, map.id);
+          const priority = b.yield_events?.length && b.status === "success" ? (a.status === "collision" ? 3 : a.status !== "success" ? 2 : 1) : 0;
+          if (priority > score) {
+            score = priority;
+            Object.assign(state, {scene: map.id, seed, left: pair.base, right: pair.improved});
+          }
+        }
+      }
+    }
+  }
+
+  function attachRecordedExample() {
+    const map = "pointmaze_u", seed = 1;
+    const pair = data.pairs.find((item) => item.base === "rrt_star");
+    if (!pair) return;
+    const original = run(pair.base, seed, map);
+    const improved = run(pair.improved, seed, map);
+    if (original?.status !== "collision" || improved?.status !== "success") return;
+    const tail = original.trajectory.filter((sample) => sample[0] >= original.finish_time - .3);
+    const stopped = tail.length > 1 && tail.every((sample) => Math.hypot(sample[1] - tail[0][1], sample[2] - tail[0][2]) < .005);
+    $("rrt-example-text").textContent = maps.get(map).label + "的种子 " + seed + " 中，RRT* 原版" +
+      (stopped ? "已经停住，仍在 " : "在 ") + measure(original.finish_time, "s", 2) + " 与小车相撞。提前让行版在 " +
+      measure(improved.finish_time, "s", 2) + " 到达终点。";
+    $("rrt-example").hidden = false;
+    $("rrt-example-link").addEventListener("click", (event) => {
+      event.preventDefault();
+      Object.assign(state, {seed, left: pair.base, right: pair.improved});
+      changeScene(map);
+      const player = document.querySelector(".console");
+      player.focus({preventScroll: true});
+      player.scrollIntoView({block: "center"});
+    });
+  }
+
+  function attachControls() {
+    for (const map of data.scenes) {
+      $("scene-select").add(new Option(map.label, map.id));
+      $("result-scene").add(new Option(map.label, map.id));
+    }
+    for (const seed of data.seeds) $("seed-select").add(new Option(seed, seed));
+    for (const [id, label] of methods) {
+      for (const control of ["left-method","right-method","record-method"]) $(control).add(new Option(label, id));
+    }
+    for (const pair of data.pairs) {
+      const button = create("button", "", methods.get(pair.base) + " 对照");
+      button.type = "button";
+      button.dataset.base = pair.base;
+      button.dataset.improved = pair.improved;
+      button.addEventListener("click", () => {
+        state.left = pair.base;
+        state.right = pair.improved;
+        renderReplay();
+      });
+      $("pair-switch").append(button);
+    }
+    for (const id of ["scene-select","result-scene"]) $(id).addEventListener("change", (event) => changeScene(event.target.value));
+    $("seed-select").addEventListener("change", (event) => {
+      state.seed = Number(event.target.value);
+      renderReplay();
+      renderSmoothing();
+    });
+    for (const side of sides) {
+      $(side + "-method").addEventListener("change", (event) => { state[side] = event.target.value; renderReplay(); });
+    }
+    $("view-select").addEventListener("change", (event) => { state.view = event.target.value; paintFrame(); });
+    $("speed-select").addEventListener("change", (event) => { state.speed = Number(event.target.value); });
+    $("timeline").addEventListener("input", (event) => seek(Number(event.target.value)));
+    $("play-toggle").addEventListener("click", togglePlayback);
+    $("reset-playback").addEventListener("click", () => seek(0));
+    const consoleBox = document.querySelector(".console");
+    consoleBox.tabIndex = 0;
+    consoleBox.addEventListener("keydown", (event) => {
+      if (event.target !== consoleBox) return;
+      if (event.key === " ") { event.preventDefault(); togglePlayback(); }
+      if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+        event.preventDefault();
+        seek(state.time + (event.key === "ArrowRight" ? 1 : -1));
+      }
+    });
+    document.addEventListener("visibilitychange", () => { if (document.hidden) { stop(); paintFrame(); } });
+    document.querySelectorAll("[data-backend]").forEach((button) => {
+      button.addEventListener("click", () => { state.backend = button.dataset.backend; renderResults(); });
+    });
+    $("record-method").addEventListener("change", displayRecord);
+  }
+
+  for (const side of sides) {
+    const canvas = $(side + "-canvas");
+    screens[side] = {canvas, ctx: canvas.getContext("2d"), width: 0, height: 0};
+  }
+  if (!screens.left.ctx || !screens.right.ctx) {
+    document.documentElement.classList.add("no-canvas");
+    $("load-error").textContent = "当前浏览器无法绘制轨迹，图中保留了完整路线。";
+    $("load-error").hidden = false;
+  }
+  document.documentElement.classList.add("has-data");
+  if (data.webots?.version) $("simulator-version").textContent = "Webots " + data.webots.version;
+  if (data.webots?.ci_url) {
+    $("native-source").href = data.webots.ci_url;
+    $("native-source").textContent = "本次 Webots 运行记录";
+  }
+  renderOverview();
+  initialCase();
+  attachControls();
+  attachRecordedExample();
+  populateAtlas();
+  changeScene(state.scene);
+  resize();
+  if (window.ResizeObserver) {
+    const observer = new ResizeObserver(resize);
+    observer.observe($("screens"));
+  } else {
+    window.addEventListener("resize", resize);
   }
 }());

@@ -6,14 +6,18 @@ from pathlib import Path
 # Display names are independent of the stable IDs used in configs and archives.
 METHOD_LABELS = {
     "astar": "A*",
+    "astar_yield": "A*（提前让行）",
     "rrt_star": "RRT*",
+    "rrt_star_yield": "RRT*（提前让行）",
     "voronoi": "Voronoi",
     "apf": "APF controller",
     "dwa": "DWA controller",
-    "voronoi_qp": "Dev1ce's method",
+    "voronoi_qp": "G²VD Planner",
 }
 METHODS = tuple(METHOD_LABELS)
+YIELD_BASES = {"astar_yield": "astar", "rrt_star_yield": "rrt_star"}
 EXPERIMENT_GROUPS = {
+    "crossing_comparisons": [[base, improved] for improved, base in YIELD_BASES.items()],
     "global_planning_common_follower": ["astar", "rrt_star", "voronoi", "voronoi_qp"],
     "local_control_common_astar_guide": ["astar", "apf", "dwa"],
 }
@@ -23,6 +27,13 @@ NAVIGATION_PROTOCOL = {
     "replan": "check remaining route and robot-to-route connection every control step; observed blockage triggers replanning with a 1s minimum interval between attempts",
     "local_controller_guide": "A* with the same dynamic observation layer and replan trigger",
     "shared_safety": "same speed, wheel, acceleration limits and scan-based braking",
+    "crossing_comparisons": {
+        "input": "rolling 0.65 s history of non-static lidar hits in world coordinates; tracks expire after 0.55 s without a detection",
+        "prediction": "compare predicted motion along the current route with braking to a stop at 0.12 s intervals up to 3.48 s",
+        "action": "brake before a predicted encounter when the stopping location is safe; continue through if stopping in the crossing is more dangerous",
+        "stalled_after_blockage": "after yielding or an observed blockage, replan from the current pose if displacement stays below 0.10 m for 2.5 s",
+        "yield_time_s": "sum of intervals requesting braking for a crossing, including deceleration",
+    },
     "inflation_escape": "checked connection and increasing-clearance motion at radius+0.03m; occupied cells are retained",
     "schedules": "one slow cart per public layout; intermediate waypoint times shift together by up to 0.6 s per seed; fixed robot configuration",
 }
@@ -53,14 +64,19 @@ METHOD_REFERENCES = {
     "voronoi_qp": {
         "authors": "Wen, Zhang, Bi, Liu, Yuan, Fang",
         "year": 2024,
-        "title": "G2VD Planner: Efficient Motion Planning With Grid-based Generalized Voronoi Diagrams",
+        "title": "G²VD Planner: Efficient Motion Planning With Grid-based Generalized Voronoi Diagrams",
+        "url": "https://arxiv.org/abs/2201.12981",
         "doi": "10.1109/TASE.2024.3398996",
         "reproduced_component": "Section IV-D, safe-bubble QP smoothing, Equations (5)-(8)",
         "adaptation": "geometric Voronoi reference; smoothness/reference weights 1000/1; shared inflated grid and follower",
         "implementation": "navigation/smoothing.py:voronoi_qp_path",
     }
 }
-DEFAULT_METHOD = "voronoi_qp"
+for improved, base in YIELD_BASES.items():
+    METHOD_REFERENCES[improved] = {"base_planner": base, "name": METHOD_LABELS[improved],
+                                   "implementation": "navigation/yielding.py:CrossingGuard",
+                                   "contribution": "coursework extension for crossings observed by lidar"}
+DEFAULT_METHOD = "astar_yield"
 ROOT = Path(__file__).resolve().parents[1]
 
 

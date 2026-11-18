@@ -47,7 +47,7 @@ def main():
         for (name, seed, method), result in zip(cases, pool.map(simulate, cases)):
             archive[f"{name}_{method}_seed{seed}.json"] = result
             rows.append({k: v for k, v in result.items() if k not in
-                         ("trajectory", "initial_path", "config", "route_updates", "replan_attempts")})
+                         ("trajectory", "initial_path", "config", "route_updates", "replan_attempts", "yield_events")})
             print(f"{name} seed={seed} {method}: {result['status']} {result['finish_time']:.2f}s", flush=True)
     with TemporaryDirectory(dir=args.output) as directory:
         stage = Path(directory)

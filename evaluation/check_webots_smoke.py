@@ -12,7 +12,7 @@ import numpy as np
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from navigation.scenarios import SCENES, make_scene, static_distance
-from navigation.settings import METHODS
+from navigation.settings import METHODS, YIELD_BASES
 
 
 def validate_run(run):
@@ -33,8 +33,29 @@ def validate_run(run):
             or min(row["clearance"] for row in trajectory) != run["min_surface_clearance"]
             or (run["min_surface_clearance"] <= 0) != (status == "collision")):
         raise ValueError(f"Inconsistent supervisor observations for {label}")
+    if any(len(row["obstacles"]) != len(scene.moving) for row in trajectory):
+        raise ValueError(f"Different moving obstacles for {label}")
+    positions = np.asarray([row["obstacles"] for row in trajectory])
+    for index, cart in enumerate(scene.moving):
+        if (not np.allclose(positions[:, index, :2], cart.position(times), rtol=0., atol=1e-8)
+                or not np.all(positions[:, index, 2] == cart.radius)):
+            raise ValueError(f"Different cart schedule or footprint for {label}")
     if run["algorithm"] in ("apf", "dwa") and (run["role"], run["guide_planner"]) != ("local_controller", "astar"):
         raise ValueError(f"Local controller was not guided by A* in {label}")
+    # Earlier baseline-only archives predate explicit yielding and recorded no such events.
+    if run["algorithm"] in YIELD_BASES and not {"yield_events", "yield_time_s", "yield_count"} <= run.keys():
+        raise ValueError(f"Missing yielding measurements in {label}")
+    events = run.get("yield_events", [])
+    last_end = 0.
+    for event in events:
+        start, end = event["start"], event["end"]
+        if not (start >= 0. and start + 1e-9 >= last_end and start < end <= run["finish_time"] + 1e-9):
+            raise ValueError(f"Yield interval outside the experiment or out of order in {label}")
+        last_end = end
+    total = sum(event["end"] - event["start"] for event in events)
+    if (run.get("yield_count", 0) != len(events) or not math.isclose(total, run.get("yield_time_s", 0.), abs_tol=1e-6)
+            or (events and run["algorithm"] not in YIELD_BASES)):
+        raise ValueError(f"Inconsistent yielding measurements in {label}")
     errors = []
     for row in run["control_trajectory"]:
         local = row.get("nearest_lidar_local")
@@ -82,9 +103,19 @@ def main():
         canonical = f"{key[0]}_{key[1]}_seed{key[2]}.json"
         runs[canonical] = run
         summaries.append({**{field: run[field] for field in fields}, "raw_run": canonical,
-                          "nearest_lidar_geometry_max_error_m": max_error})
+                          "nearest_lidar_geometry_max_error_m": max_error,
+                          "yield_count": run.get("yield_count", 0), "yield_time_s": run.get("yield_time_s", 0.)})
     if expected != observed:
         raise ValueError(f"Missing native runs: {sorted(expected - observed)}")
+    for scene, method, seed in observed:
+        base = YIELD_BASES.get(method)
+        if base is None or (scene, base, seed) not in observed:
+            continue
+        variant = runs[f"{scene}_{method}_seed{seed}.json"]
+        reference = runs[f"{scene}_{base}_seed{seed}.json"]
+        if variant["guide_planner"] != base or not reference.get("config") or any(
+                variant[key] != reference[key] for key in ("initial_path", "guide_planner", "role", "config", "control_step_s")):
+            raise ValueError(f"Different initial plan or control parameters for {scene}/{base}/{method}/seed{seed}")
     if set(scenes) == set(SCENES):
         for method in {"astar", "rrt_star"} & set(methods):
             if not any(row["replan_attempt_count"] for row in summaries if row["algorithm"] == method):

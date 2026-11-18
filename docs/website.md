@@ -10,7 +10,7 @@ python scripts/build_site.py
 python -m http.server 8000 --directory dist
 ```
 
-打开 <http://localhost:8000/>。首页的三个地图按钮会切换固定障碍、小车轨迹、机器人回放、结果表和 Webots 世界文件名。方法和种子选择器读取当前地图下的运行。网页用表格区分到达、碰撞、超时和规划失败。
+打开 <http://localhost:8000/>。首页左右两个回放共用一条时间轴，默认从 0 s 开始。可以选 A* 或 RRT* 的原版和提前让行版，也可以自己换方法、地图和种子。点让行或碰撞时刻能跳到对应画面。结果表覆盖全部八种方法，二维结果来自五个种子，Webots 结果来自种子 0。
 
 ## 更新地图或实验
 
@@ -27,7 +27,7 @@ node --check site/app.js
 python scripts/build_site.py
 ```
 
-网页构建读取 `results/manifest.json`、汇总表和真实轨迹。每条运行的地图、种子、几何与小车时序都要与场景签名相符。Webots 单独归档并校验。网页构建会给应用脚本、样式和数据文件加上与内容对应的缓存版本。[构建脚本](../scripts/build_site.py)
+网页构建读取 `results/manifest.json`、汇总表和真实轨迹。每条运行的地图、种子、几何与小车时序都要与场景签名相符。构建时还会核对每对方法的初始路线以及让行区间和总时长。Webots 单独归档并校验。应用脚本、样式和数据文件带有按内容计算的缓存版本。[构建脚本](../scripts/build_site.py)
 
 ## GitHub Pages
 

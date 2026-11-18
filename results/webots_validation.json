@@ -28,7 +28,31 @@
       "stationary_time_s": 0.0,
       "longest_pause_s": 0.0,
       "raw_run": "turtlebot3_stage2_astar_seed0.json",
-      "nearest_lidar_geometry_max_error_m": 0.005873146403100216
+      "nearest_lidar_geometry_max_error_m": 0.005873146403100216,
+      "yield_count": 0,
+      "yield_time_s": 0
+    },
+    {
+      "scene": "turtlebot3_stage2",
+      "algorithm": "astar_yield",
+      "seed": 0,
+      "scene_sha256": "98f7d1d30c1589c3057f19fd5ff5b101d2f0d7e31a159ca1446f9c76a154d3bb",
+      "status": "success",
+      "success": true,
+      "collision_count": 0,
+      "finish_time": 14.784,
+      "actual_path_length": 4.368597983252145,
+      "min_surface_clearance": 0.10201564481433173,
+      "role": "global_planner",
+      "guide_planner": "astar",
+      "replan_count": 2,
+      "replan_attempt_count": 2,
+      "stationary_time_s": 3.072,
+      "longest_pause_s": 3.072,
+      "raw_run": "turtlebot3_stage2_astar_yield_seed0.json",
+      "nearest_lidar_geometry_max_error_m": 0.005726204454955974,
+      "yield_count": 1,
+      "yield_time_s": 3.5520000000000005
     },
     {
       "scene": "turtlebot3_stage2",
@@ -48,7 +72,31 @@
       "stationary_time_s": 2.4,
       "longest_pause_s": 1.6320000000000001,
       "raw_run": "turtlebot3_stage2_rrt_star_seed0.json",
-      "nearest_lidar_geometry_max_error_m": 0.0057819478245344225
+      "nearest_lidar_geometry_max_error_m": 0.0057819478245344225,
+      "yield_count": 0,
+      "yield_time_s": 0
+    },
+    {
+      "scene": "turtlebot3_stage2",
+      "algorithm": "rrt_star_yield",
+      "seed": 0,
+      "scene_sha256": "98f7d1d30c1589c3057f19fd5ff5b101d2f0d7e31a159ca1446f9c76a154d3bb",
+      "status": "success",
+      "success": true,
+      "collision_count": 0,
+      "finish_time": 18.016000000000002,
+      "actual_path_length": 4.309735464162627,
+      "min_surface_clearance": 0.09983890214889463,
+      "role": "global_planner",
+      "guide_planner": "rrt_star",
+      "replan_count": 3,
+      "replan_attempt_count": 4,
+      "stationary_time_s": 4.992,
+      "longest_pause_s": 2.496,
+      "raw_run": "turtlebot3_stage2_rrt_star_yield_seed0.json",
+      "nearest_lidar_geometry_max_error_m": 0.0005809413093257609,
+      "yield_count": 3,
+      "yield_time_s": 3.936000000000001
     },
     {
       "scene": "turtlebot3_stage2",
@@ -68,7 +116,9 @@
       "stationary_time_s": 0.0,
       "longest_pause_s": 0.0,
       "raw_run": "turtlebot3_stage2_voronoi_seed0.json",
-      "nearest_lidar_geometry_max_error_m": 0.0062677690275328435
+      "nearest_lidar_geometry_max_error_m": 0.0062677690275328435,
+      "yield_count": 0,
+      "yield_time_s": 0
     },
     {
       "scene": "turtlebot3_stage2",
@@ -88,7 +138,9 @@
       "stationary_time_s": 0.0,
       "longest_pause_s": 0.0,
       "raw_run": "turtlebot3_stage2_apf_seed0.json",
-      "nearest_lidar_geometry_max_error_m": 0.0059927883321443665
+      "nearest_lidar_geometry_max_error_m": 0.0059927883321443665,
+      "yield_count": 0,
+      "yield_time_s": 0
     },
     {
       "scene": "turtlebot3_stage2",
@@ -108,7 +160,9 @@
       "stationary_time_s": 0.0,
       "longest_pause_s": 0.0,
       "raw_run": "turtlebot3_stage2_dwa_seed0.json",
-      "nearest_lidar_geometry_max_error_m": 0.002123385365698671
+      "nearest_lidar_geometry_max_error_m": 0.002123385365698671,
+      "yield_count": 0,
+      "yield_time_s": 0
     },
     {
       "scene": "turtlebot3_stage2",
@@ -128,7 +182,9 @@
       "stationary_time_s": 0.0,
       "longest_pause_s": 0.0,
       "raw_run": "turtlebot3_stage2_voronoi_qp_seed0.json",
-      "nearest_lidar_geometry_max_error_m": 0.005139452698747854
+      "nearest_lidar_geometry_max_error_m": 0.005139452698747854,
+      "yield_count": 0,
+      "yield_time_s": 0
     },
     {
       "scene": "pointmaze_u",
@@ -148,7 +204,31 @@
       "stationary_time_s": 0.0,
       "longest_pause_s": 0.0,
       "raw_run": "pointmaze_u_astar_seed0.json",
-      "nearest_lidar_geometry_max_error_m": 0.0033926687055423344
+      "nearest_lidar_geometry_max_error_m": 0.0033926687055423344,
+      "yield_count": 0,
+      "yield_time_s": 0
+    },
+    {
+      "scene": "pointmaze_u",
+      "algorithm": "astar_yield",
+      "seed": 0,
+      "scene_sha256": "5901ab090d4240ed03d1a950f1d2b1045e7ae45c671e617d7f8a29a4dd59a441",
+      "status": "success",
+      "success": true,
+      "collision_count": 0,
+      "finish_time": 23.584,
+      "actual_path_length": 7.188047063752189,
+      "min_surface_clearance": 0.15490398226588947,
+      "role": "global_planner",
+      "guide_planner": "astar",
+      "replan_count": 5,
+      "replan_attempt_count": 6,
+      "stationary_time_s": 3.744,
+      "longest_pause_s": 3.456,
+      "raw_run": "pointmaze_u_astar_yield_seed0.json",
+      "nearest_lidar_geometry_max_error_m": 0.003074698270833731,
+      "yield_count": 2,
+      "yield_time_s": 4.5120000000000005
     },
     {
       "scene": "pointmaze_u",
@@ -168,7 +248,31 @@
       "stationary_time_s": 0.0,
       "longest_pause_s": 0.0,
       "raw_run": "pointmaze_u_rrt_star_seed0.json",
-      "nearest_lidar_geometry_max_error_m": 0.0036016384992330064
+      "nearest_lidar_geometry_max_error_m": 0.0036016384992330064,
+      "yield_count": 0,
+      "yield_time_s": 0
+    },
+    {
+      "scene": "pointmaze_u",
+      "algorithm": "rrt_star_yield",
+      "seed": 0,
+      "scene_sha256": "5901ab090d4240ed03d1a950f1d2b1045e7ae45c671e617d7f8a29a4dd59a441",
+      "status": "success",
+      "success": true,
+      "collision_count": 0,
+      "finish_time": 23.712,
+      "actual_path_length": 7.588654466463315,
+      "min_surface_clearance": 0.13426213734721815,
+      "role": "global_planner",
+      "guide_planner": "rrt_star",
+      "replan_count": 4,
+      "replan_attempt_count": 5,
+      "stationary_time_s": 2.88,
+      "longest_pause_s": 2.592,
+      "raw_run": "pointmaze_u_rrt_star_yield_seed0.json",
+      "nearest_lidar_geometry_max_error_m": 0.0018205621881248746,
+      "yield_count": 2,
+      "yield_time_s": 3.552000000000001
     },
     {
       "scene": "pointmaze_u",
@@ -188,7 +292,9 @@
       "stationary_time_s": 18.72,
       "longest_pause_s": 17.76,
       "raw_run": "pointmaze_u_voronoi_seed0.json",
-      "nearest_lidar_geometry_max_error_m": 0.004329305993638011
+      "nearest_lidar_geometry_max_error_m": 0.004329305993638011,
+      "yield_count": 0,
+      "yield_time_s": 0
     },
     {
       "scene": "pointmaze_u",
@@ -208,7 +314,9 @@
       "stationary_time_s": 0.0,
       "longest_pause_s": 0.0,
       "raw_run": "pointmaze_u_apf_seed0.json",
-      "nearest_lidar_geometry_max_error_m": 0.0025430657609002427
+      "nearest_lidar_geometry_max_error_m": 0.0025430657609002427,
+      "yield_count": 0,
+      "yield_time_s": 0
     },
     {
       "scene": "pointmaze_u",
@@ -228,7 +336,9 @@
       "stationary_time_s": 0.0,
       "longest_pause_s": 0.0,
       "raw_run": "pointmaze_u_dwa_seed0.json",
-      "nearest_lidar_geometry_max_error_m": 0.002921681971758905
+      "nearest_lidar_geometry_max_error_m": 0.002921681971758905,
+      "yield_count": 0,
+      "yield_time_s": 0
     },
     {
       "scene": "pointmaze_u",
@@ -248,7 +358,9 @@
       "stationary_time_s": 0.0,
       "longest_pause_s": 0.0,
       "raw_run": "pointmaze_u_voronoi_qp_seed0.json",
-      "nearest_lidar_geometry_max_error_m": 0.007039307379410276
+      "nearest_lidar_geometry_max_error_m": 0.007039307379410276,
+      "yield_count": 0,
+      "yield_time_s": 0
     },
     {
       "scene": "pointmaze_medium",
@@ -268,7 +380,31 @@
       "stationary_time_s": 0.0,
       "longest_pause_s": 0.0,
       "raw_run": "pointmaze_medium_astar_seed0.json",
-      "nearest_lidar_geometry_max_error_m": 0.007139808841172712
+      "nearest_lidar_geometry_max_error_m": 0.007139808841172712,
+      "yield_count": 0,
+      "yield_time_s": 0
+    },
+    {
+      "scene": "pointmaze_medium",
+      "algorithm": "astar_yield",
+      "seed": 0,
+      "scene_sha256": "c09dcd041b7dd4877d8c003f19e6ceae7f1a28eeb6db9f44ac09e10f88458144",
+      "status": "success",
+      "success": true,
+      "collision_count": 0,
+      "finish_time": 37.344,
+      "actual_path_length": 14.370181339603336,
+      "min_surface_clearance": 0.10629591932456145,
+      "role": "global_planner",
+      "guide_planner": "astar",
+      "replan_count": 7,
+      "replan_attempt_count": 7,
+      "stationary_time_s": 0.0,
+      "longest_pause_s": 0.0,
+      "raw_run": "pointmaze_medium_astar_yield_seed0.json",
+      "nearest_lidar_geometry_max_error_m": 0.007139808841172712,
+      "yield_count": 0,
+      "yield_time_s": 0
     },
     {
       "scene": "pointmaze_medium",
@@ -288,7 +424,31 @@
       "stationary_time_s": 0.0,
       "longest_pause_s": 0.0,
       "raw_run": "pointmaze_medium_rrt_star_seed0.json",
-      "nearest_lidar_geometry_max_error_m": 0.0039730410432640695
+      "nearest_lidar_geometry_max_error_m": 0.0039730410432640695,
+      "yield_count": 0,
+      "yield_time_s": 0
+    },
+    {
+      "scene": "pointmaze_medium",
+      "algorithm": "rrt_star_yield",
+      "seed": 0,
+      "scene_sha256": "c09dcd041b7dd4877d8c003f19e6ceae7f1a28eeb6db9f44ac09e10f88458144",
+      "status": "success",
+      "success": true,
+      "collision_count": 0,
+      "finish_time": 35.968,
+      "actual_path_length": 14.625120099573637,
+      "min_surface_clearance": 0.13919966976058717,
+      "role": "global_planner",
+      "guide_planner": "rrt_star",
+      "replan_count": 5,
+      "replan_attempt_count": 6,
+      "stationary_time_s": 0.0,
+      "longest_pause_s": 0.0,
+      "raw_run": "pointmaze_medium_rrt_star_yield_seed0.json",
+      "nearest_lidar_geometry_max_error_m": 0.0039730410432640695,
+      "yield_count": 0,
+      "yield_time_s": 0
     },
     {
       "scene": "pointmaze_medium",
@@ -308,7 +468,9 @@
       "stationary_time_s": 89.85600000000001,
       "longest_pause_s": 89.85600000000001,
       "raw_run": "pointmaze_medium_voronoi_seed0.json",
-      "nearest_lidar_geometry_max_error_m": 0.0025273658666480348
+      "nearest_lidar_geometry_max_error_m": 0.0025273658666480348,
+      "yield_count": 0,
+      "yield_time_s": 0
     },
     {
       "scene": "pointmaze_medium",
@@ -328,7 +490,9 @@
       "stationary_time_s": 0.0,
       "longest_pause_s": 0.0,
       "raw_run": "pointmaze_medium_apf_seed0.json",
-      "nearest_lidar_geometry_max_error_m": 0.00796943875203996
+      "nearest_lidar_geometry_max_error_m": 0.00796943875203996,
+      "yield_count": 0,
+      "yield_time_s": 0
     },
     {
       "scene": "pointmaze_medium",
@@ -348,7 +512,9 @@
       "stationary_time_s": 71.136,
       "longest_pause_s": 71.136,
       "raw_run": "pointmaze_medium_dwa_seed0.json",
-      "nearest_lidar_geometry_max_error_m": 0.0035261574974081444
+      "nearest_lidar_geometry_max_error_m": 0.0035261574974081444,
+      "yield_count": 0,
+      "yield_time_s": 0
     },
     {
       "scene": "pointmaze_medium",
@@ -368,8 +534,10 @@
       "stationary_time_s": 0.0,
       "longest_pause_s": 0.0,
       "raw_run": "pointmaze_medium_voronoi_qp_seed0.json",
-      "nearest_lidar_geometry_max_error_m": 0.005968662825670373
+      "nearest_lidar_geometry_max_error_m": 0.005968662825670373,
+      "yield_count": 0,
+      "yield_time_s": 0
     }
   ],
-  "raw_runs_sha256": "264c0bb07718e31bd2002a133fbefb44845039ae6e7d8c56e2a79f91b168c1c2"
+  "raw_runs_sha256": "db001c21942eba7e1e40c247bacf6cf4e1dcaa1644a88f606b8549555191e28b"
 }

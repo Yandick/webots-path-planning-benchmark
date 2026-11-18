@@ -1,4 +1,5 @@
 """Webots adapter for the same Navigator used by the explicit 2D backend."""
+from dataclasses import asdict
 import json
 import math
 import os
@@ -75,17 +76,23 @@ def main():
         if nav.planning_failed or truth_path.exists() or t >= scene.duration or np.linalg.norm(pose[:2]-scene.goal) <= .25:
             break
     left.setVelocity(0.); right.setVelocity(0.)
-    result = {**nav.diagnostics(), **control_metrics(rows, dt),
+    finish_time = rows[-1]["t"] if rows else 0.
+    if truth_path.is_file():
+        truth = json.loads(truth_path.read_text(encoding="utf-8"))
+        finish_time = min(finish_time, truth["finish_time"])
+    result = {**nav.diagnostics(finish_time), **control_metrics(rows, dt),
               **(path_metrics(nav.initial_path) if method not in ("apf", "dwa") else {"planned_peak_curvature": None}),
               "backend": "webots", "scene": scene.name, "seed": scene.seed,
               "scene_sha256": scene.signature(), "algorithm": method,
               "planning_failed": nav.planning_failed, "planning_time_ms": nav.planning_time_ms,
-              "control_step_s": dt,
+              "control_step_s": dt, "config": asdict(nav.cfg),
               "initial_path": nav.initial_path.tolist(),
               "planned_path_length": (float(np.linalg.norm(np.diff(nav.initial_path, axis=0), axis=1).sum())
                                       if method not in ("apf", "dwa") else None),
               "trajectory": rows}
-    (out / f"{tag}_navigator.json").write_text(json.dumps(result, indent=2), encoding="utf-8")
+    temporary = out / f"{tag}_navigator.tmp"
+    temporary.write_text(json.dumps(result, indent=2), encoding="utf-8")
+    temporary.replace(out / f"{tag}_navigator.json")
     print(f"[Navigator] Saved {tag}", flush=True)
 
 

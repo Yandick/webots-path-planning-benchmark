@@ -78,7 +78,7 @@ def run(scene, method=DEFAULT_METHOD, dt=.10):
             status = "collision"; break
         if np.linalg.norm(pose[:2]-scene.goal) < .25:
             status = "success"; break
-    return {**nav.diagnostics(), **control_metrics(rows, dt),
+    return {**nav.diagnostics(rows[-1]["t"]), **control_metrics(rows, dt),
             **(path_metrics(nav.initial_path) if method not in ("apf", "dwa") else {"planned_peak_curvature": None}),
             "backend": "kinematic_2d", "scene": scene.name, "seed": scene.seed,
             "scene_sha256": scene.signature(), "algorithm": method, "config": asdict(nav.cfg),

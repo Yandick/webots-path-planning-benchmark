@@ -79,7 +79,13 @@ class SiteDataTests(unittest.TestCase):
     def test_current_labels_keep_stable_method_ids(self):
         self.assertEqual({row["id"]: row["label"] for row in self.payload["methods"]}, METHOD_LABELS)
         self.assertEqual(next(row["label"] for row in self.payload["methods"]
-                              if row["id"] == "voronoi_qp"), "Dev1ce's method")
+                              if row["id"] == "voronoi_qp"), "G²VD Planner")
+        self.assertEqual(self.payload["pairs"], [{"base": "astar", "improved": "astar_yield"},
+                                                {"base": "rrt_star", "improved": "rrt_star_yield"}])
+        for run in self.payload["runs"]:
+            self.assertEqual(run["yield_count"], len(run["yield_events"]))
+            self.assertAlmostEqual(run["yield_time_s"],
+                                   sum(e["end"]-e["start"] for e in run["yield_events"]), places=5)
         if self.payload["webots"]:
             runs = self.payload["webots"]["runs"]
             self.assertEqual({(row["scene"], row["method"]) for row in runs},
