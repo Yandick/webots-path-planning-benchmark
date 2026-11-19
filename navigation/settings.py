@@ -14,8 +14,32 @@ METHOD_LABELS = {
     "dwa": "DWA controller",
     "voronoi_qp": "G²VD Planner",
 }
+# Literature-inspired coursework extensions; kept outside the canonical set so
+# the published site data (8 methods) and its validation stay untouched.
+EXTENSION_LABELS = {
+    "astar_risk": "A*（风险自适应让行）",
+    "astar_hypo": "A*（多假设让行）",
+    "astar_recip": "A*（互惠让行）",
+    "astar_t": "A*（时空规划）",
+    "astar_ppo": "A*（PPO 让行）",
+}
 METHODS = tuple(METHOD_LABELS)
+EXTENSION_METHODS = tuple(EXTENSION_LABELS)
 YIELD_BASES = {"astar_yield": "astar", "rrt_star_yield": "rrt_star"}
+# Guard-parameterised variants of the base planners; same follower, same conditions.
+GUARD_VARIANTS = {
+    "astar_risk": {"base": "astar",
+                   "params": {"risk_coeff": .5}},
+    "astar_hypo": {"base": "astar",
+                   "params": {"frozen_hypothesis": True, "include_stopped": True}},
+    "astar_recip": {"base": "astar",
+                    "params": {"reciprocity": .5}},
+}
+# Methods whose guide planner produces an explicit (space, time) schedule.
+TIMED_PLANNERS = {"astar_t": "astar"}
+# Learned guards constructed by a factory, outside the CrossingGuard parameter space.
+GUARD_FACTORIES = {"astar_ppo": {"factory": "navigation.ppo_yield:guard_factory",
+                                  "base": "astar"}}
 EXPERIMENT_GROUPS = {
     "crossing_comparisons": [[base, improved] for improved, base in YIELD_BASES.items()],
     "global_planning_common_follower": ["astar", "rrt_star", "voronoi", "voronoi_qp"],
@@ -76,6 +100,54 @@ for improved, base in YIELD_BASES.items():
     METHOD_REFERENCES[improved] = {"base_planner": base, "name": METHOD_LABELS[improved],
                                    "implementation": "navigation/yielding.py:CrossingGuard",
                                    "contribution": "coursework extension for crossings observed by lidar"}
+for variant, spec in GUARD_VARIANTS.items():
+    METHOD_REFERENCES[variant] = {"base_planner": spec["base"], "name": EXTENSION_LABELS[variant],
+                                  "implementation": "navigation/yielding.py:CrossingGuard",
+                                  "guard_parameters": spec["params"]}
+METHOD_REFERENCES["astar_risk"].update({
+    "idea": "inflate the yield clearance by the velocity-estimate standard error, "
+            "which grows with the prediction horizon",
+    "references": [{"title": "Risk-Aware Adaptive Safety Margins for Model Predictive Control "
+                             "with Orientation-Motion Coupled Barrier Functions in Dynamic Environments",
+                    "year": 2026, "url": "https://www.mdpi.com/2076-0825/15/2/116"},
+                   {"title": "Improved Obstacle Avoidance for Autonomous Robots with ORCA-FLC",
+                    "year": 2025, "url": "https://www.alphaxiv.org/abs/2508.06722"}]})
+METHOD_REFERENCES["astar_hypo"].update({
+    "idea": "evaluate both the constant-velocity and the frozen-position hypotheses per track "
+            "and yield on the worst case; stopped tracks are no longer ignored",
+    "references": [{"title": "Motion Planning in Dynamic Environments: A Survey",
+                    "year": 2026, "url": "https://arxiv.org/html/2606.02677v1"}]})
+METHOD_REFERENCES["astar_recip"].update({
+    "idea": "ablation: assume the crossing cart reciprocates and provides half of the required "
+            "separation; the scripted carts never avoid, so collisions are expected",
+    "references": [{"title": "Reciprocal n-Body Collision Avoidance (ORCA)",
+                    "authors": "van den Berg, Guy, Lin, Manocha", "year": 2011},
+                   {"title": "VR-ORCA: Variable Responsibility Optimal Reciprocal Collision Avoidance",
+                    "year": 2021, "url": "https://www.mdpi.com/2076-0825/15/2/116"}]})
+METHOD_REFERENCES["astar_t"] = {
+    "base_planner": "astar", "name": EXTENSION_LABELS["astar_t"],
+    "implementation": "navigation/timed.py:timed_astar",
+    "idea": "plan in quantised (space, time) with explicit wait actions from lidar-derived "
+            "track predictions, instead of braking reactively at the crossing edge",
+    "references": [{"title": "Unifying Decision-Making and Trajectory-Planning in Unsignalized "
+                             "Intersections Using Time-Varying Potential Fields",
+                    "year": 2026, "url": "https://www.alphaxiv.org/abs/2607.13626"},
+                   {"title": "Motion Planning in Dynamic Environments: A Survey",
+                    "year": 2026, "url": "https://arxiv.org/html/2606.02677v1"}]}
+METHOD_REFERENCES["astar_ppo"] = {
+    "base_planner": "astar", "name": EXTENSION_LABELS["astar_ppo"],
+    "implementation": "navigation/ppo_yield.py:PPOGuard",
+    "idea": "a PPO policy replaces the rule-based yield threshold, mapping frame-invariant "
+            "track features to {go, slow, yield}; a physical-clearance shield and the "
+            "unsafe-stop rule can force a hold but are never overridden",
+    "references": [{"authors": "Schulman, Wolski, Dhariwal, Radford, Klimov", "year": 2017,
+                    "title": "Proximal Policy Optimization Algorithms",
+                    "url": "https://arxiv.org/abs/1707.06347"},
+                   {"title": "Safe Efficient Policy Optimization for Unsignalized "
+                             "Intersection Decision-Making (RL high-level, MPC low-level)",
+                    "year": 2024, "url": "https://www.ieee-jas.com/article/doi/10.1109/JAS.2024.124287"}],
+    "training": "scripts/train_ppo.py; on-policy PPO in the 2D simulator with cart schedules "
+                "randomised +-2 s; weights in assets/ppo_yield_weights.npz"}
 DEFAULT_METHOD = "astar_yield"
 ROOT = Path(__file__).resolve().parents[1]
 

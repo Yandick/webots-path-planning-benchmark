@@ -16,7 +16,8 @@ sys.path.insert(0, str(ROOT))
 from navigation.classical import voronoi_route
 from navigation.core import Config
 from navigation.scenarios import MAP_FILE, SCENES, SCENE_INFO, make_scene
-from navigation.settings import METHODS, METHOD_REFERENCES, EXPERIMENT_GROUPS, NAVIGATION_PROTOCOL
+from navigation.settings import (EXTENSION_METHODS, METHODS, METHOD_REFERENCES,
+                                 EXPERIMENT_GROUPS, NAVIGATION_PROTOCOL)
 from navigation.simulation import run
 
 
@@ -34,7 +35,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--scenes", nargs="+", choices=SCENES, default=list(SCENES))
     parser.add_argument("--seeds", type=int, nargs="+", default=list(range(5)))
-    parser.add_argument("--methods", nargs="+", choices=METHODS, default=list(METHODS))
+    parser.add_argument("--methods", nargs="+", choices=list(METHODS)+list(EXTENSION_METHODS),
+                        default=list(METHODS))
     parser.add_argument("--output", type=Path, default=ROOT / "results")
     parser.add_argument("--workers", type=int, default=1)
     args = parser.parse_args()

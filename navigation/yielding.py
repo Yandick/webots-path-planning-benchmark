@@ -44,6 +44,7 @@ class _Track:
     samples: deque = field(default_factory=deque)
     radius: float = .16
     velocity: np.ndarray = field(default_factory=lambda: np.zeros(2))
+    sigma_v: float = 0.
 
     def predict(self, t):
         stamp, center = self.samples[-1]
@@ -56,21 +57,32 @@ class _Track:
             self.samples.popleft()
         if t-self.samples[0][0] < .25:
             self.velocity = np.zeros(2)
+            self.sigma_v = 0.
             return
         stamps = np.array([s for s, _ in self.samples])
         times = stamps-stamps.mean()
-        self.velocity = times @ np.array([p for _, p in self.samples]) / np.dot(times, times)
+        positions = np.array([p for _, p in self.samples])
+        self.velocity = times @ positions / np.dot(times, times)
+        residual = positions-positions.mean(axis=0)-np.outer(times, self.velocity)
+        sigma2 = (residual**2).sum()/max(len(times)-2, 1)
+        self.sigma_v = float(np.clip(np.sqrt(max(sigma2, 0.)/np.dot(times, times)), 0., .3))
 
 
 class CrossingGuard:
-    def __init__(self, config):
+    def __init__(self, config, risk_coeff=0., frozen_hypothesis=False,
+                 reciprocity=0., include_stopped=False):
         self.config = config
+        self.risk_coeff = risk_coeff
+        self.frozen_hypothesis = frozen_hypothesis
+        self.reciprocity = reciprocity
+        self.include_stopped = include_stopped
         self.tracks = []
         self.hold_until = -np.inf
         self.events = []
         self.holding = False
         self.progress_position = None
         self.progress_time = 0.
+        self.last_gaps = []
 
     def stalled(self, t, position):
         """After a blockage, retry from the actual pose if the follower cannot move."""
@@ -100,7 +112,7 @@ class CrossingGuard:
                 track.update(t, center, radius)
                 self.tracks.append(track)
 
-    def should_yield(self, t, dt, position, speed, route):
+    def _gaps(self, t, position, speed, route):
         """Compare simultaneous positions for the next part of the robot's route."""
         cfg = self.config
         horizon = np.arange(0., 3.6, .12)
@@ -115,17 +127,49 @@ class CrossingGuard:
         stopping = speed*braking_t-.5*cfg.acceleration*braking_t**2
         stopped = np.column_stack([np.interp(stopping, distance, path[:, k]) for k in range(2)])
         conflict, unsafe_stop = False, False
+        self.last_gaps = []
         for track in self.tracks:
-            if np.linalg.norm(track.velocity) < .05:
+            if np.linalg.norm(track.velocity) < .05 and not self.include_stopped:
                 continue
-            other = track.predict(t) + horizon[:, None]*track.velocity
-            clearance = cfg.radius + track.radius + cfg.margin
-            passing_gap = np.linalg.norm(robot-other, axis=1).min()
-            stopped_gap = np.linalg.norm(stopped-other, axis=1).min()
-            conflict |= passing_gap <= clearance + stopping[-1]
-            # If already crossing, stopping in the cart's path can be more
-            # dangerous than clearing it. Keep following and checking the route.
-            unsafe_stop |= stopped_gap < clearance and stopped_gap < passing_gap
+            now = track.predict(t)
+            clearance = (cfg.radius+track.radius+cfg.margin)*(1.-self.reciprocity)
+            risk = self.risk_coeff*horizon*track.sigma_v
+            predictions = [now+horizon[:, None]*track.velocity]
+            if self.frozen_hypothesis:
+                predictions.append(np.repeat(now[None, :], len(horizon), axis=0))
+            moving_gap = np.linalg.norm(robot-predictions[0], axis=1)
+            self.last_gaps.append({"gap": float(moving_gap.min()),
+                                   "t_min": float(horizon[int(moving_gap.argmin())]),
+                                   "rel": (now-position).tolist(),
+                                   "vel": track.velocity.tolist(),
+                                   "radius": track.radius, "sigma_v": track.sigma_v,
+                                   "stopped": float(np.linalg.norm(track.velocity) < .05)})
+            for other in predictions:
+                passing_gap = np.linalg.norm(robot-other, axis=1).min()
+                stopped_gap = np.linalg.norm(stopped-other, axis=1).min()
+                conflict |= bool((passing_gap <= clearance+stopping[-1]+risk).any())
+                # If already crossing, stopping in the cart's path can be more
+                # dangerous than clearing it. Keep following and checking the route.
+                unsafe_stop |= stopped_gap < clearance and stopped_gap < passing_gap
+        return conflict, unsafe_stop
+
+    def conflicts(self, t, position, speed, route):
+        """Side-effect-free conflict check, for planners that handle waiting themselves."""
+        return self._gaps(t, position, speed, route)[0]
+
+    def force_hold(self, t, dt):
+        """Hold position without a should_yield call; timed planners use this as a fallback."""
+        self.hold_until = t+.55
+        if not self.holding:
+            self.events.append({"start": float(t), "end": float(t)})
+        self.events[-1]["end"] = float(t+dt)
+        self.holding = True
+
+    def release_hold(self):
+        self.holding = False
+
+    def should_yield(self, t, dt, position, speed, route):
+        conflict, unsafe_stop = self._gaps(t, position, speed, route)
         if unsafe_stop:
             self.hold_until = t
         elif conflict:

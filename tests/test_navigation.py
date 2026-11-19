@@ -208,6 +208,161 @@ class NavigationTests(unittest.TestCase):
         self.assertEqual(improved["trajectory"], baseline["trajectory"])
         self.assertEqual(improved["yield_events"], [])
 
+    def test_extension_guards_change_the_yield_decision(self):
+        position = np.array([.20, 0.])
+        route = np.array([position, [2., 0.]])
+        arc = np.array([[.16, 0.], [.128, .096], [.096, .128]])
+        base = CrossingGuard(Config())
+        risk = CrossingGuard(Config(), risk_coeff=.5)
+        hypo = CrossingGuard(Config(), frozen_hypothesis=True, include_stopped=True)
+        recip = CrossingGuard(Config(), reciprocity=.5)
+        times = np.linspace(0., .6, 7)
+        for t in times:
+            points = arc+[0., .59-.2*t]
+            for guard in (base, risk, hypo, recip):
+                guard.observe(t, position, points)
+        self.assertGreater(risk.tracks[0].sigma_v, 0.)
+        self.assertEqual(base.should_yield(.6, .1, position, .45, route),
+                         risk.should_yield(.6, .1, position, .45, route))
+        self.assertFalse(hypo.should_yield(.6, .1, position, .45, route))
+        # A paused cart on the route is ignored by the base guard but not by
+        # the multi-hypothesis variant (fresh guards: a track that just jumped
+        # onto the route has a large estimated velocity and is never skipped).
+        paused = [CrossingGuard(Config()), CrossingGuard(Config(), frozen_hypothesis=True,
+                                                          include_stopped=True)]
+        for _ in range(6):
+            for guard in paused:
+                guard.observe(.7, position, arc+[0., .05])
+        plain, frozen = paused
+        self.assertFalse(plain.conflicts(.8, position, .45, route))
+        self.assertTrue(frozen.conflicts(.8, position, .45, route))
+        # Assuming reciprocity halves the required separation: a slow track
+        # passing 0.25 m off the route conflicts for the base guard but not
+        # the reciprocal one (the detector inflates the apparent disc, so the
+        # estimated center rides higher than the raw points).
+        parallel = [CrossingGuard(Config()), CrossingGuard(Config(), reciprocity=.5)]
+        for i, t in enumerate(np.linspace(0., .6, 7)):
+            for guard in parallel:
+                guard.observe(t, position, np.array([[.20+.013*i, .25], [.24+.013*i, .25],
+                                                     [.28+.013*i, .25]]))
+        plain, half = parallel
+        self.assertTrue(plain.conflicts(.6, position, .45, route))
+        self.assertFalse(half.conflicts(.6, position, .45, route))
+
+    def test_timed_astar_waits_for_a_crossing_disc(self):
+        from navigation.timed import TICK, timed_astar
+        grid = GridMap([StaticObstacle("box", {"center": (0., 2.), "size": (8., .2)})],
+                       min_x=-4., max_x=4., min_y=-4., max_y=4., resolution=.1,
+                       robot_radius=.18, safety_margin=.14)
+        # Disc sweeps up the middle column through x=0 during ticks [5, 25].
+        class Track:
+            radius = .15
+            velocity = np.array([0., .05])
+            def predict(self, t):
+                return np.array([0., -2.])+self.velocity*t
+        schedule = timed_astar(grid, (-3.5, 0.), (3.5, 0.), 0., tracks=[Track()],
+                               speed=.45, horizon=30.)
+        self.assertIsNotNone(schedule)
+        points, times = schedule
+        self.assertEqual(len(points), len(times))
+        self.assertGreater(times[-1], 0.)
+        # Some waypoint must lie on the far side of the crossing at a late time.
+        late = points[times > 8.]
+        self.assertTrue((late[:, 0] > .3).any())
+        # Too short a horizon to detour or wait: infeasible.
+        self.assertIsNone(timed_astar(grid, (-3.5, 0.), (3.5, 0.), 0., tracks=[Track()],
+                                      speed=.45, horizon=6.))
+
+    def test_extension_methods_navigate_the_crossing_scenes(self):
+        scene = make_scene("turtlebot3_stage2", 0)
+        self.assertEqual(run(scene, "astar")["status"], "collision")
+        for method in ("astar_risk", "astar_hypo", "astar_recip", "astar_t"):
+            result = run(scene, method)
+            self.assertEqual(result["status"], "success", method)
+            self.assertGreater(result["min_surface_clearance"], 0., method)
+
+    def test_timed_planner_recovers_from_a_temporary_blockage(self):
+        cart = MovingDisc("cart", .28, [[0, 0, -1], [3, 0, 0], [37, 0, 0], [40, 0, 1]])
+        scene = Scene("temporary_blockage", start=(-2.5, 0.), goal=(2.5, 0.), duration=40., moving=[cart])
+        result = run(scene, "astar_t")
+        self.assertEqual(result["status"], "success")
+        self.assertLess(result["finish_time"], 40.)
+
+    def test_ppo_policy_shapes_and_gradient(self):
+        from navigation.ppo import PPOPolicy
+        rng = np.random.default_rng(3)
+        policy = PPOPolicy(20, 3, seed=1)
+        obs = rng.normal(size=(5, 20))
+        action, logp, value = policy.act(obs, rng=rng)
+        self.assertEqual(action.shape, (5,))
+        self.assertTrue(((0 <= action) & (action < 3)).all())
+        self.assertTrue((logp <= 0).all())
+        self.assertEqual(value.shape, (5,))
+        deterministic, _, _ = policy.act(obs, deterministic=True)
+        again, _, _ = policy.act(obs, deterministic=True)
+        self.assertTrue(np.array_equal(deterministic, again))
+        # analytic gradients vs central differences on a small batch
+        batch_obs = rng.normal(size=(6, 20))
+        batch_action = np.array([0, 1, 2, 0, 1, 2])
+        c6 = rng.normal(size=6)*.01
+        ret = rng.normal(size=6)
+        grads = policy._gradients(batch_obs, batch_action, c6/6, ret)
+        def loss_of():
+            lp, v, _ = policy.forward(batch_obs)
+            lg = lp-lp.max(1, keepdims=True)
+            p = np.exp(lg)
+            p /= p.sum(1, keepdims=True)
+            lp_a = np.log(np.take_along_axis(p, batch_action[:, None], 1)[:, 0]+1e-12)
+            ent = -(p*np.log(p+1e-12)).sum(1)
+            return -(lp_a*c6).sum()/6+.25/6*((v[:, 0]-ret)**2).sum()-.01*ent.mean()
+        eps = 1e-6
+        for key in ("W3", "bv"):
+            idx = tuple(int(rng.integers(s)) for s in policy.p[key].shape)
+            original = float(policy.p[key][idx])
+            policy.p[key][idx] = original+eps
+            high = loss_of()
+            policy.p[key][idx] = original-eps
+            low = loss_of()
+            policy.p[key][idx] = original
+            numeric = (high-low)/(2*eps)
+            self.assertAlmostEqual(float(grads[key][idx]), numeric, places=7)
+
+    def test_ppo_guard_decides_and_shields(self):
+        from navigation.ppo import PPOPolicy
+        from navigation.ppo_yield import PPOGuard, build_obs, OBS_DIM, YIELD
+        guard = PPOGuard(Config(), policy=PPOPolicy(OBS_DIM, 3, seed=5))
+        position = np.array([.20, 0.])
+        route = np.array([position, [2., 0.]])
+        arc = np.array([[.16, 0.], [.128, .096], [.096, .128]])
+        for _ in range(6):
+            guard.observe(.7, position, arc+[0., .05])
+        obs = build_obs(guard, position, .45, 1.8)
+        self.assertEqual(obs.shape, (OBS_DIM,))
+        # A track sitting on the route must trip the hard shield no matter the policy.
+        guard.policy.p["b3"] = np.array([-8., 0., 0.])  # policy strongly prefers GO
+        self.assertTrue(guard.should_yield(.8, .1, position, .45, route))
+        self.assertEqual(guard.speed_scale, 1.)
+        self.assertTrue(guard.holding)
+
+    def test_ppo_env_steps_and_reports(self):
+        from navigation.rl_env import YieldEnv
+        from navigation.ppo import PPOPolicy
+        import navigation.ppo_yield as ppo_yield
+        ppo_yield.ACTIVE_POLICY = PPOPolicy(20, 3, seed=0)
+        try:
+            env = YieldEnv(seeds=(0,), time_shift=.3)
+            obs = env.reset(np.random.default_rng(0))
+            self.assertEqual(obs.shape, (20,))
+            total, done, steps = 0., False, 0
+            while not done and steps < 1200:
+                obs, reward, done, info = env.step()
+                total += reward
+                steps += 1
+            self.assertTrue(done)
+            self.assertIn("collision", info)
+        finally:
+            ppo_yield.ACTIVE_POLICY = None
+
     def test_offset_robot_replans_even_when_remaining_reference_is_clear(self):
         scene = Scene("offset_reference", start=(-.75, -.14), goal=(-.85, 2.),
                       moving=[MovingDisc("disc", .48, [[0, 0, 0], [100, 0, 0]])])

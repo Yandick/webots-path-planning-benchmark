@@ -28,6 +28,8 @@ A* 和 RRT* 在路被堵住时都会重新规划。可是在窄路里，机器�
 
 另有 Voronoi、G²VD Planner、APF 和 DWA 四个参考方法。G²VD Planner 采用 Wen 等人论文中的方法名，项目复现其第 IV-D 节的二次规划平滑，输入为本项目的几何 Voronoi 路线。八种方法共跑 120 次二维仿真，Webots R2025a 在同三张地图上用种子 0 另跑 24 次。[原论文](https://arxiv.org/abs/2201.12981) · [二维逐次结果](results/summary.csv) · [Webots 记录](results/webots_validation.json)
 
+扩展实验：在提前让行基础上验证了五个文献启发变体（风险自适应余量、多假设预测、时空 A\*、互惠让行消融、PPO 学习决策），同条件另跑 135 次对照。时空 A\* 在预测稳定的地图上最快快 40%，多假设预测因"路口内停车+被迫冲刺"反而撞车，PPO 在标准条件下与规则版等价但揭示了规则版在宽分布下的过度让行，结论与数据见[变体实验报告](docs/coursework_yield_variants_report.md)（`results_extension/`）。
+
 ## 本地运行
 
 ```bash

@@ -10,13 +10,15 @@ import time
 
 import numpy as np
 
-from .settings import DEFAULT_METHOD, METHODS, YIELD_BASES
+from .settings import (DEFAULT_METHOD, EXTENSION_METHODS, GUARD_FACTORIES, GUARD_VARIANTS,
+                       METHODS, TIMED_PLANNERS, YIELD_BASES)
 from .observation_map import ObservationMap
 from .local import apf_command, dwa_command
 from .classical import rrt_star, voronoi_path
 from .smoothing import voronoi_qp_path
 from .metrics import resample_path
 from .yielding import CrossingGuard
+from .timed import effective_speed, nominal_schedule, timed_astar, timed_conflict
 
 
 def angle(a):
@@ -78,19 +80,40 @@ class Config:
 
 class Navigator:
     def __init__(self, scene, method=DEFAULT_METHOD, config=None):
-        if method not in METHODS:
+        if method not in METHODS+EXTENSION_METHODS:
             raise ValueError(method)
         self.scene, self.method = replace(scene, moving=[]), method
         self.cfg = config or Config()
         self.observation = ObservationMap(self.scene, self.cfg.observation_retention)
         self.grid = self.observation.grid
         self.role = "local_controller" if method in ("apf", "dwa") else "global_planner"
-        self.guide_planner = "astar" if self.role == "local_controller" else YIELD_BASES.get(method, method)
-        self.crossing_guard = CrossingGuard(self.cfg) if method in YIELD_BASES else None
+        variant = GUARD_VARIANTS.get(method, {})
+        self.timed_base = TIMED_PLANNERS.get(method)
+        factory = GUARD_FACTORIES.get(method)
+        base = YIELD_BASES.get(method, variant.get("base", self.timed_base or method))
+        if factory:
+            base = factory.get("base", base)
+        self.guide_planner = "astar" if self.role == "local_controller" else base
+        if factory:
+            import importlib
+            module, name = factory["factory"].split(":")
+            self.crossing_guard = getattr(importlib.import_module(module), name)(self.cfg)
+        elif method in YIELD_BASES or variant:
+            self.crossing_guard = CrossingGuard(self.cfg, **variant.get("params", {}))
+        elif self.timed_base:
+            self.crossing_guard = CrossingGuard(self.cfg)
+        else:
+            self.crossing_guard = None
         self.plan_attempts = []
         self.route_updates = []
         self.steps_ms = []
         self.next_route_check = 0.
+        self.schedule_times = None
+        # When timed replans repeatedly fail to produce motion (e.g. the cart
+        # resumes an unobservable schedule), fall back to pure reactive
+        # yielding for a while, exactly like the base early-yield method.
+        self.timed_reactive_until = 0.
+        self.timed_failures = 0
         begin = time.perf_counter()
         self.path = self.plan(scene.start)
         self.planning_time_ms = (time.perf_counter()-begin)*1000
@@ -100,7 +123,7 @@ class Navigator:
         self.initial_path = self.path.copy()
         self.route_updates.append({"t": 0., "reason": "initial", "path": self.path.tolist()})
 
-    def plan(self, start):
+    def plan(self, start, t=0., timed=True):
         start = np.asarray(start)
         connector = None
         if not self.grid.is_collision_free_point(*start):
@@ -125,8 +148,31 @@ class Navigator:
             path = voronoi_path(self.grid, start, self.scene.goal)
         elif self.guide_planner == "voronoi_qp":
             path = voronoi_qp_path(self.grid, start, self.scene.goal)
+        elif self.timed_base and timed:
+            reference = astar(self.grid, start, self.scene.goal)
+            if reference is None:
+                return None
+            length = float(np.linalg.norm(np.diff(reference, axis=0), axis=1).sum())
+            horizon = min(90., max(25., 1.4*length/effective_speed(self.grid, self.cfg.max_speed)))
+            schedule = timed_astar(self.grid, start, self.scene.goal, t,
+                                   tracks=self.crossing_guard.tracks if self.crossing_guard else (),
+                                   speed=self.cfg.max_speed, horizon=horizon,
+                                   clearance_extra=self.cfg.margin+.06)
+            if schedule is None:
+                # No feasible schedule in range; the caller falls back to the
+                # reactive proceed-vs-brake comparison until a replan succeeds.
+                return None
+            path, self.schedule_times = schedule
+            if connector is not None:
+                self.schedule_times = np.concatenate(([t], self.schedule_times))
         else:
             path = astar(self.grid, start, self.scene.goal)
+            if self.timed_base and path is not None:
+                # Reactive fallback: keep the spatial route on a nominal
+                # timetable so schedule following keeps working.
+                self.schedule_times = nominal_schedule(path, t, self.cfg.max_speed)
+                if connector is not None:
+                    self.schedule_times = np.concatenate(([t], self.schedule_times))
         return np.vstack((connector, path)) if connector is not None and path is not None else path
 
     def remaining_path(self, position):
@@ -148,6 +194,8 @@ class Navigator:
         stalled = False
         if self.crossing_guard is not None:
             self.crossing_guard.observe(t, position, hits)
+            if self.timed_base and t >= self.timed_reactive_until:
+                return self._update_route_timed(pose, t, speed, dt)
             holding = self.crossing_guard.should_yield(t, dt, position, speed, self.remaining_path(position))
             if self.plan_attempts or self.crossing_guard.events:
                 stalled = self.crossing_guard.stalled(t, position)
@@ -163,14 +211,101 @@ class Navigator:
         reason = "observed_route_blockage" if blocked else "stalled_after_blockage"
         self.next_route_check = t+self.cfg.replan_period
         begin = time.perf_counter()
-        candidate = self.plan(pose[:2])
+        candidate = self.plan(pose[:2], t, timed=self.timed_base is None or t >= self.timed_reactive_until)
         elapsed = (time.perf_counter()-begin)*1000
         self.plan_attempts.append({"t": float(t), "success": candidate is not None,
-                                   "time_ms": elapsed, "reason": reason})
+                                   "time_ms": elapsed, "reason": reason, "pos": [float(pose[0]), float(pose[1])]})
         if candidate is not None:
             self.path = candidate
             self.route_updates.append({"t": float(t), "reason": reason,
                                        "path": candidate.tolist()})
+
+    def _update_route_timed(self, pose, t, speed, dt):
+        """Replan the (space, time) schedule when predictions disagree with it.
+
+        The schedule governs while it is consistent with the track predictions.
+        When it is not, the reactive proceed-vs-brake comparison arbitrates the
+        approach (and holds if necessary) while timed replanning is throttled.
+        """
+        self.crossing_guard.release_hold()
+        remaining = self.remaining_path(pose[:2])
+        demanded = True
+        conflict = True
+        if self.schedule_times is not None and len(self.path) > 1:
+            dense = resample_path(self.path, .08)
+            progress = np.r_[0., np.cumsum(np.linalg.norm(np.diff(dense, axis=0), axis=1))]
+            waypoint_progress = np.r_[0., np.cumsum(np.linalg.norm(np.diff(self.path, axis=0), axis=1))]
+            i = int(np.argmin(np.linalg.norm(dense-np.asarray(pose[:2]), axis=1)))
+            conflict = timed_conflict(self.path, self.schedule_times, t,
+                                      self.crossing_guard.tracks, robot_radius=self.cfg.radius,
+                                      clearance_extra=self.cfg.margin+.06)
+            tq = min(t+.5, float(self.schedule_times[-1]))
+            demanded = bool(np.interp(tq, self.schedule_times, waypoint_progress)-progress[i] > .1)
+        # Personal space: a track resuming motion toward the parked robot must
+        # trigger arbitration immediately, not wait for the stalled cycle.
+        for track in self.crossing_guard.tracks:
+            clearance = self.cfg.radius+track.radius+self.cfg.margin
+            future = track.predict(t+1.)
+            if np.linalg.norm(future-np.asarray(pose[:2])) < clearance+.06:
+                conflict = True
+                break
+        stalled = False
+        if self.plan_attempts or self.crossing_guard.events:
+            stalled = self.crossing_guard.stalled(t, pose[:2])
+        stalled = stalled and demanded
+        if not stalled and (not conflict or not demanded):
+            return
+        if t+1e-9 < self.next_route_check:
+            self.crossing_guard.should_yield(t, dt, pose[:2], speed, remaining)
+            return
+        reason = "predicted_track_conflict" if conflict else "stalled_after_blockage"
+        # Three timed replans without physical progress means the prediction
+        # model cannot explain the scene (e.g. the cart resumed its scripted
+        # route). Defer to reactive yielding for a while, like the base method.
+        moved = True
+        if self.plan_attempts:
+            moved = np.linalg.norm(np.asarray(pose[:2])
+                                   -np.asarray(self.plan_attempts[-1].get("pos", pose[:2]))) > .1
+        self.timed_failures = 0 if moved else self.timed_failures+1
+        if self.timed_failures >= 3:
+            self.timed_failures = 0
+            self.timed_reactive_until = t+8.
+            self.crossing_guard.should_yield(t, dt, pose[:2], speed, remaining)
+            return
+        self.next_route_check = t+self.cfg.replan_period
+        begin = time.perf_counter()
+        candidate = self.plan(pose[:2], t)
+        elapsed = (time.perf_counter()-begin)*1000
+        self.plan_attempts.append({"t": float(t), "success": candidate is not None,
+                                   "time_ms": elapsed, "reason": reason,
+                                   "pos": [float(pose[0]), float(pose[1])]})
+        if candidate is not None:
+            self.path = candidate
+            self.crossing_guard.release_hold()
+            self.route_updates.append({"t": float(t), "reason": reason,
+                                       "path": candidate.tolist()})
+        else:
+            # No feasible schedule right now: defer to the reactive
+            # proceed-vs-brake comparison until a replan succeeds.
+            self.crossing_guard.should_yield(t, dt, pose[:2], speed, remaining)
+
+    def timed_target(self, pose, t):
+        """Schedule-interpolated lookahead point plus an explicit wait flag.
+
+        Waiting is commanded explicitly when the robot is ahead of schedule;
+        the target is never a point behind the robot (a unicycle would have to
+        turn around to chase it).
+        """
+        if self.schedule_times is None or len(self.path) < 2:
+            return self.target(np.asarray(pose[:2])), False
+        dense = resample_path(self.path, .08)
+        progress = np.r_[0., np.cumsum(np.linalg.norm(np.diff(dense, axis=0), axis=1))]
+        waypoint_progress = np.r_[0., np.cumsum(np.linalg.norm(np.diff(self.path, axis=0), axis=1))]
+        i = int(np.argmin(np.linalg.norm(dense-np.asarray(pose[:2]), axis=1)))
+        tq = min(t+1., float(self.schedule_times[-1]))
+        target = np.array([np.interp(tq, self.schedule_times, self.path[:, k]) for k in range(2)])
+        scheduled = np.interp(tq, self.schedule_times, waypoint_progress)
+        return target, bool(progress[i] > scheduled+.05)
 
     def step(self, pose, velocity, points, t, dt):
         tick = time.perf_counter()
@@ -179,6 +314,13 @@ class Navigator:
         self.update_route(pose, points, t, velocity[0], dt)
         if self.crossing_guard is not None and self.crossing_guard.holding:
             raw = (0., 0.)
+        elif self.timed_base and t < self.timed_reactive_until:
+            # Reactive fallback window: plain spatial following, exactly like
+            # the base early-yield method (which manages holds via should_yield).
+            raw = self.follow_path(pose, self.target(np.asarray(pose[:2])))
+        elif self.timed_base:
+            target, waiting = self.timed_target(pose, t)
+            raw = (0., 0.) if waiting else self.follow_path(pose, target)
         else:
             target = self.target(np.asarray(pose[:2]))
             if self.method == "apf":
@@ -187,6 +329,8 @@ class Navigator:
                 raw = self.dwa(pose, velocity, target, points, dt)
             else:
                 raw = self.follow_path(pose, target)
+        if self.crossing_guard is not None and getattr(self.crossing_guard, "speed_scale", 1.) != 1.:
+            raw = raw[0]*self.crossing_guard.speed_scale, raw[1]
         command = self.brake(pose, velocity, points, self.limit_command(raw, velocity, dt), dt)
         self.steps_ms.append((time.perf_counter()-tick)*1000)
         return command
