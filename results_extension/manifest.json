@@ -1,0 +1,351 @@
+{
+  "backend": "kinematic_2d",
+  "scenes": [
+    "turtlebot3_stage2",
+    "pointmaze_u",
+    "pointmaze_medium"
+  ],
+  "seeds": [
+    0,
+    1,
+    2,
+    3,
+    4
+  ],
+  "methods": [
+    "astar",
+    "astar_yield",
+    "rrt_star",
+    "rrt_star_yield",
+    "astar_risk",
+    "astar_hypo",
+    "astar_recip",
+    "astar_t",
+    "astar_ppo"
+  ],
+  "runs": [
+    "turtlebot3_stage2_astar_seed0.json",
+    "turtlebot3_stage2_astar_yield_seed0.json",
+    "turtlebot3_stage2_rrt_star_seed0.json",
+    "turtlebot3_stage2_rrt_star_yield_seed0.json",
+    "turtlebot3_stage2_astar_risk_seed0.json",
+    "turtlebot3_stage2_astar_hypo_seed0.json",
+    "turtlebot3_stage2_astar_recip_seed0.json",
+    "turtlebot3_stage2_astar_t_seed0.json",
+    "turtlebot3_stage2_astar_ppo_seed0.json",
+    "turtlebot3_stage2_astar_seed1.json",
+    "turtlebot3_stage2_astar_yield_seed1.json",
+    "turtlebot3_stage2_rrt_star_seed1.json",
+    "turtlebot3_stage2_rrt_star_yield_seed1.json",
+    "turtlebot3_stage2_astar_risk_seed1.json",
+    "turtlebot3_stage2_astar_hypo_seed1.json",
+    "turtlebot3_stage2_astar_recip_seed1.json",
+    "turtlebot3_stage2_astar_t_seed1.json",
+    "turtlebot3_stage2_astar_ppo_seed1.json",
+    "turtlebot3_stage2_astar_seed2.json",
+    "turtlebot3_stage2_astar_yield_seed2.json",
+    "turtlebot3_stage2_rrt_star_seed2.json",
+    "turtlebot3_stage2_rrt_star_yield_seed2.json",
+    "turtlebot3_stage2_astar_risk_seed2.json",
+    "turtlebot3_stage2_astar_hypo_seed2.json",
+    "turtlebot3_stage2_astar_recip_seed2.json",
+    "turtlebot3_stage2_astar_t_seed2.json",
+    "turtlebot3_stage2_astar_ppo_seed2.json",
+    "turtlebot3_stage2_astar_seed3.json",
+    "turtlebot3_stage2_astar_yield_seed3.json",
+    "turtlebot3_stage2_rrt_star_seed3.json",
+    "turtlebot3_stage2_rrt_star_yield_seed3.json",
+    "turtlebot3_stage2_astar_risk_seed3.json",
+    "turtlebot3_stage2_astar_hypo_seed3.json",
+    "turtlebot3_stage2_astar_recip_seed3.json",
+    "turtlebot3_stage2_astar_t_seed3.json",
+    "turtlebot3_stage2_astar_ppo_seed3.json",
+    "turtlebot3_stage2_astar_seed4.json",
+    "turtlebot3_stage2_astar_yield_seed4.json",
+    "turtlebot3_stage2_rrt_star_seed4.json",
+    "turtlebot3_stage2_rrt_star_yield_seed4.json",
+    "turtlebot3_stage2_astar_risk_seed4.json",
+    "turtlebot3_stage2_astar_hypo_seed4.json",
+    "turtlebot3_stage2_astar_recip_seed4.json",
+    "turtlebot3_stage2_astar_t_seed4.json",
+    "turtlebot3_stage2_astar_ppo_seed4.json",
+    "pointmaze_u_astar_seed0.json",
+    "pointmaze_u_astar_yield_seed0.json",
+    "pointmaze_u_rrt_star_seed0.json",
+    "pointmaze_u_rrt_star_yield_seed0.json",
+    "pointmaze_u_astar_risk_seed0.json",
+    "pointmaze_u_astar_hypo_seed0.json",
+    "pointmaze_u_astar_recip_seed0.json",
+    "pointmaze_u_astar_t_seed0.json",
+    "pointmaze_u_astar_ppo_seed0.json",
+    "pointmaze_u_astar_seed1.json",
+    "pointmaze_u_astar_yield_seed1.json",
+    "pointmaze_u_rrt_star_seed1.json",
+    "pointmaze_u_rrt_star_yield_seed1.json",
+    "pointmaze_u_astar_risk_seed1.json",
+    "pointmaze_u_astar_hypo_seed1.json",
+    "pointmaze_u_astar_recip_seed1.json",
+    "pointmaze_u_astar_t_seed1.json",
+    "pointmaze_u_astar_ppo_seed1.json",
+    "pointmaze_u_astar_seed2.json",
+    "pointmaze_u_astar_yield_seed2.json",
+    "pointmaze_u_rrt_star_seed2.json",
+    "pointmaze_u_rrt_star_yield_seed2.json",
+    "pointmaze_u_astar_risk_seed2.json",
+    "pointmaze_u_astar_hypo_seed2.json",
+    "pointmaze_u_astar_recip_seed2.json",
+    "pointmaze_u_astar_t_seed2.json",
+    "pointmaze_u_astar_ppo_seed2.json",
+    "pointmaze_u_astar_seed3.json",
+    "pointmaze_u_astar_yield_seed3.json",
+    "pointmaze_u_rrt_star_seed3.json",
+    "pointmaze_u_rrt_star_yield_seed3.json",
+    "pointmaze_u_astar_risk_seed3.json",
+    "pointmaze_u_astar_hypo_seed3.json",
+    "pointmaze_u_astar_recip_seed3.json",
+    "pointmaze_u_astar_t_seed3.json",
+    "pointmaze_u_astar_ppo_seed3.json",
+    "pointmaze_u_astar_seed4.json",
+    "pointmaze_u_astar_yield_seed4.json",
+    "pointmaze_u_rrt_star_seed4.json",
+    "pointmaze_u_rrt_star_yield_seed4.json",
+    "pointmaze_u_astar_risk_seed4.json",
+    "pointmaze_u_astar_hypo_seed4.json",
+    "pointmaze_u_astar_recip_seed4.json",
+    "pointmaze_u_astar_t_seed4.json",
+    "pointmaze_u_astar_ppo_seed4.json",
+    "pointmaze_medium_astar_seed0.json",
+    "pointmaze_medium_astar_yield_seed0.json",
+    "pointmaze_medium_rrt_star_seed0.json",
+    "pointmaze_medium_rrt_star_yield_seed0.json",
+    "pointmaze_medium_astar_risk_seed0.json",
+    "pointmaze_medium_astar_hypo_seed0.json",
+    "pointmaze_medium_astar_recip_seed0.json",
+    "pointmaze_medium_astar_t_seed0.json",
+    "pointmaze_medium_astar_ppo_seed0.json",
+    "pointmaze_medium_astar_seed1.json",
+    "pointmaze_medium_astar_yield_seed1.json",
+    "pointmaze_medium_rrt_star_seed1.json",
+    "pointmaze_medium_rrt_star_yield_seed1.json",
+    "pointmaze_medium_astar_risk_seed1.json",
+    "pointmaze_medium_astar_hypo_seed1.json",
+    "pointmaze_medium_astar_recip_seed1.json",
+    "pointmaze_medium_astar_t_seed1.json",
+    "pointmaze_medium_astar_ppo_seed1.json",
+    "pointmaze_medium_astar_seed2.json",
+    "pointmaze_medium_astar_yield_seed2.json",
+    "pointmaze_medium_rrt_star_seed2.json",
+    "pointmaze_medium_rrt_star_yield_seed2.json",
+    "pointmaze_medium_astar_risk_seed2.json",
+    "pointmaze_medium_astar_hypo_seed2.json",
+    "pointmaze_medium_astar_recip_seed2.json",
+    "pointmaze_medium_astar_t_seed2.json",
+    "pointmaze_medium_astar_ppo_seed2.json",
+    "pointmaze_medium_astar_seed3.json",
+    "pointmaze_medium_astar_yield_seed3.json",
+    "pointmaze_medium_rrt_star_seed3.json",
+    "pointmaze_medium_rrt_star_yield_seed3.json",
+    "pointmaze_medium_astar_risk_seed3.json",
+    "pointmaze_medium_astar_hypo_seed3.json",
+    "pointmaze_medium_astar_recip_seed3.json",
+    "pointmaze_medium_astar_t_seed3.json",
+    "pointmaze_medium_astar_ppo_seed3.json",
+    "pointmaze_medium_astar_seed4.json",
+    "pointmaze_medium_astar_yield_seed4.json",
+    "pointmaze_medium_rrt_star_seed4.json",
+    "pointmaze_medium_rrt_star_yield_seed4.json",
+    "pointmaze_medium_astar_risk_seed4.json",
+    "pointmaze_medium_astar_hypo_seed4.json",
+    "pointmaze_medium_astar_recip_seed4.json",
+    "pointmaze_medium_astar_t_seed4.json",
+    "pointmaze_medium_astar_ppo_seed4.json"
+  ],
+  "raw_runs_sha256": "a5be8b7e383c0f9cd012492350fdc224be304695b0cb821bc41539012bdbba3b",
+  "map_definitions_sha256": "645351b2d2cbfc4f411625996c5510e9287ffc9da77d0dfae877386349cccee1",
+  "map_sources": {
+    "turtlebot3_stage2": "https://github.com/ROBOTIS-GIT/turtlebot3_simulations/tree/a35a56c8b04877dc89772b598084d8ce648a9023/turtlebot3_gazebo/models/turtlebot3_dqn_world",
+    "pointmaze_u": "https://github.com/Farama-Foundation/Gymnasium-Robotics/blob/91f8a92916a0ca0c6032549c9964d8f4b0f68450/gymnasium_robotics/envs/maze/maps.py#L48-L54",
+    "pointmaze_medium": "https://github.com/Farama-Foundation/Gymnasium-Robotics/blob/91f8a92916a0ca0c6032549c9964d8f4b0f68450/gymnasium_robotics/envs/maze/maps.py#L56-L65"
+  },
+  "time_step_s": 0.1,
+  "collision_check_step_s": 0.01,
+  "time_budget_s": 100.0,
+  "config": {
+    "max_speed": 0.45,
+    "max_omega": 1.5,
+    "acceleration": 0.8,
+    "angular_acceleration": 3.0,
+    "radius": 0.18,
+    "margin": 0.1,
+    "horizon": 1.7,
+    "replan_period": 1.0,
+    "observation_retention": 1.0
+  },
+  "comparison_groups": {
+    "crossing_comparisons": [
+      [
+        "astar",
+        "astar_yield"
+      ],
+      [
+        "rrt_star",
+        "rrt_star_yield"
+      ]
+    ],
+    "global_planning_common_follower": [
+      "astar",
+      "rrt_star",
+      "voronoi",
+      "voronoi_qp"
+    ],
+    "local_control_common_astar_guide": [
+      "astar",
+      "apf",
+      "dwa"
+    ]
+  },
+  "navigation_protocol": {
+    "dynamic_map": "static occupancy + observed hit marking, free-ray clearing and 1s expiry",
+    "dynamic_map_source": "https://docs.nav2.org/jazzy/configuration_and_development/configuration_guide/core_servers/costmap_2d/costmap_plugins/obstacle/",
+    "replan": "check remaining route and robot-to-route connection every control step; observed blockage triggers replanning with a 1s minimum interval between attempts",
+    "local_controller_guide": "A* with the same dynamic observation layer and replan trigger",
+    "shared_safety": "same speed, wheel, acceleration limits and scan-based braking",
+    "crossing_comparisons": {
+      "input": "rolling 0.65 s history of non-static lidar hits in world coordinates; tracks expire after 0.55 s without a detection",
+      "prediction": "compare predicted motion along the current route with braking to a stop at 0.12 s intervals up to 3.48 s",
+      "action": "brake before a predicted encounter when the stopping location is safe; continue through if stopping in the crossing is more dangerous",
+      "stalled_after_blockage": "after yielding or an observed blockage, replan from the current pose if displacement stays below 0.10 m for 2.5 s",
+      "yield_time_s": "sum of intervals requesting braking for a crossing, including deceleration"
+    },
+    "inflation_escape": "checked connection and increasing-clearance motion at radius+0.03m; occupied cells are retained",
+    "schedules": "one slow cart per public layout; intermediate waypoint times shift together by up to 0.6 s per seed; fixed robot configuration"
+  },
+  "method_references": {
+    "astar": {
+      "authors": "Hart, Nilsson, Raphael",
+      "year": 1968,
+      "title": "A Formal Basis for the Heuristic Determination of Minimum Cost Paths",
+      "doi": "10.1109/TSSC.1968.300136",
+      "implementation": "navigation/core.py:astar"
+    },
+    "astar_yield": {
+      "base_planner": "astar",
+      "name": "A*（提前让行）",
+      "implementation": "navigation/yielding.py:CrossingGuard",
+      "contribution": "coursework extension for crossings observed by lidar"
+    },
+    "rrt_star": {
+      "authors": "Karaman, Frazzoli",
+      "year": 2011,
+      "title": "Sampling-based Algorithms for Optimal Motion Planning",
+      "url": "https://arxiv.org/abs/1105.1186",
+      "implementation": "navigation/classical.py:rrt_star",
+      "iterations": 1800,
+      "step_m": 0.4,
+      "goal_bias": 0.15
+    },
+    "rrt_star_yield": {
+      "base_planner": "rrt_star",
+      "name": "RRT*（提前让行）",
+      "implementation": "navigation/yielding.py:CrossingGuard",
+      "contribution": "coursework extension for crossings observed by lidar"
+    },
+    "astar_risk": {
+      "base_planner": "astar",
+      "name": "A*（风险自适应让行）",
+      "implementation": "navigation/yielding.py:CrossingGuard",
+      "guard_parameters": {
+        "risk_coeff": 0.5
+      },
+      "idea": "inflate the yield clearance by the velocity-estimate standard error, which grows with the prediction horizon",
+      "references": [
+        {
+          "title": "Risk-Aware Adaptive Safety Margins for Model Predictive Control with Orientation-Motion Coupled Barrier Functions in Dynamic Environments",
+          "year": 2026,
+          "url": "https://www.mdpi.com/2076-0825/15/2/116"
+        },
+        {
+          "title": "Improved Obstacle Avoidance for Autonomous Robots with ORCA-FLC",
+          "year": 2025,
+          "url": "https://www.alphaxiv.org/abs/2508.06722"
+        }
+      ]
+    },
+    "astar_hypo": {
+      "base_planner": "astar",
+      "name": "A*（多假设让行）",
+      "implementation": "navigation/yielding.py:CrossingGuard",
+      "guard_parameters": {
+        "frozen_hypothesis": true,
+        "include_stopped": true
+      },
+      "idea": "evaluate both the constant-velocity and the frozen-position hypotheses per track and yield on the worst case; stopped tracks are no longer ignored",
+      "references": [
+        {
+          "title": "Motion Planning in Dynamic Environments: A Survey",
+          "year": 2026,
+          "url": "https://arxiv.org/html/2606.02677v1"
+        }
+      ]
+    },
+    "astar_recip": {
+      "base_planner": "astar",
+      "name": "A*（互惠让行）",
+      "implementation": "navigation/yielding.py:CrossingGuard",
+      "guard_parameters": {
+        "reciprocity": 0.5
+      },
+      "idea": "ablation: assume the crossing cart reciprocates and provides half of the required separation; the scripted carts never avoid, so collisions are expected",
+      "references": [
+        {
+          "title": "Reciprocal n-Body Collision Avoidance (ORCA)",
+          "authors": "van den Berg, Guy, Lin, Manocha",
+          "year": 2011
+        },
+        {
+          "title": "VR-ORCA: Variable Responsibility Optimal Reciprocal Collision Avoidance",
+          "year": 2021,
+          "url": "https://www.mdpi.com/2076-0825/15/2/116"
+        }
+      ]
+    },
+    "astar_t": {
+      "base_planner": "astar",
+      "name": "A*（时空规划）",
+      "implementation": "navigation/timed.py:timed_astar",
+      "idea": "plan in quantised (space, time) with explicit wait actions from lidar-derived track predictions, instead of braking reactively at the crossing edge",
+      "references": [
+        {
+          "title": "Unifying Decision-Making and Trajectory-Planning in Unsignalized Intersections Using Time-Varying Potential Fields",
+          "year": 2026,
+          "url": "https://www.alphaxiv.org/abs/2607.13626"
+        },
+        {
+          "title": "Motion Planning in Dynamic Environments: A Survey",
+          "year": 2026,
+          "url": "https://arxiv.org/html/2606.02677v1"
+        }
+      ]
+    },
+    "astar_ppo": {
+      "base_planner": "astar",
+      "name": "A*（PPO 让行）",
+      "implementation": "navigation/ppo_yield.py:PPOGuard",
+      "idea": "a PPO policy replaces the rule-based yield threshold, mapping frame-invariant track features to {go, slow, yield}; a physical-clearance shield and the unsafe-stop rule can force a hold but are never overridden",
+      "references": [
+        {
+          "authors": "Schulman, Wolski, Dhariwal, Radford, Klimov",
+          "year": 2017,
+          "title": "Proximal Policy Optimization Algorithms",
+          "url": "https://arxiv.org/abs/1707.06347"
+        },
+        {
+          "title": "Safe Efficient Policy Optimization for Unsignalized Intersection Decision-Making (RL high-level, MPC low-level)",
+          "year": 2024,
+          "url": "https://www.ieee-jas.com/article/doi/10.1109/JAS.2024.124287"
+        }
+      ],
+      "training": "scripts/train_ppo.py; on-policy PPO in the 2D simulator with cart schedules randomised +-2 s; weights in assets/ppo_yield_weights.npz"
+    }
+  }
+}
